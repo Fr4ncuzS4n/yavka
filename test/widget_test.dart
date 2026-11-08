@@ -1,6 +1,5 @@
 // Тесты скелета экрана отметки посещаемости.
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yavka/main.dart';
