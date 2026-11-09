@@ -10,42 +10,42 @@ import '../models/attendance_status.dart';
 extension StatusStyle on AttendanceStatus {
   /// Плотный цвет статуса.
   Color get color => switch (this) {
-        AttendanceStatus.came => const Color(0xFF1E7B34),
-        AttendanceStatus.absent => const Color(0xFFC1372C),
-        AttendanceStatus.late => const Color(0xFF96600A),
-        AttendanceStatus.excused => const Color(0xFF1D5FB8),
-      };
+    AttendanceStatus.came => const Color(0xFF1E7B34),
+    AttendanceStatus.absent => const Color(0xFFC1372C),
+    AttendanceStatus.late => const Color(0xFF96600A),
+    AttendanceStatus.excused => const Color(0xFF1D5FB8),
+  };
 
   /// Приглушённый цвет для тёмной темы.
   Color get softColor => switch (this) {
-        AttendanceStatus.came => const Color(0xFF7BDD9B),
-        AttendanceStatus.absent => const Color(0xFFFF9C94),
-        AttendanceStatus.late => const Color(0xFFFFC86B),
-        AttendanceStatus.excused => const Color(0xFF93C1FF),
-      };
+    AttendanceStatus.came => const Color(0xFF7BDD9B),
+    AttendanceStatus.absent => const Color(0xFFFF9C94),
+    AttendanceStatus.late => const Color(0xFFFFC86B),
+    AttendanceStatus.excused => const Color(0xFF93C1FF),
+  };
 
   /// Цвет контента (иконки, текст) под текущую яркость темы.
   Color foreground(Brightness brightness) =>
       brightness == Brightness.light ? color : softColor;
 
   /// Полупрозрачная подложка под контент.
-  Color container(Brightness brightness) => foreground(brightness).withValues(
-        alpha: brightness == Brightness.light ? 0.12 : 0.16,
-      );
+  Color container(Brightness brightness) =>
+      foreground(brightness)
+          .withValues(alpha: brightness == Brightness.light ? 0.12 : 0.16);
 
   /// Иконка статуса.
   IconData get icon => switch (this) {
-        AttendanceStatus.came => Icons.check_circle_rounded,
-        AttendanceStatus.absent => Icons.cancel_rounded,
-        AttendanceStatus.late => Icons.schedule_rounded,
-        AttendanceStatus.excused => Icons.note_alt_rounded,
-      };
+    AttendanceStatus.came => Icons.check_circle_rounded,
+    AttendanceStatus.absent => Icons.cancel_rounded,
+    AttendanceStatus.late => Icons.schedule_rounded,
+    AttendanceStatus.excused => Icons.note_alt_rounded,
+  };
 
   /// Короткая подпись под названием статуса.
   String get hint => switch (this) {
-        AttendanceStatus.came => 'Обычная отметка',
-        AttendanceStatus.absent => 'Повторное нажатие — выбрать время',
-        AttendanceStatus.late => 'Отметка без подтверждения',
-        AttendanceStatus.excused => 'Уважительная причина',
-      };
+    AttendanceStatus.came => 'Обычная отметка',
+    AttendanceStatus.absent => 'Повторное нажатие — выбрать время',
+    AttendanceStatus.late => 'Отметка без подтверждения',
+    AttendanceStatus.excused => 'Уважительная причина',
+  };
 }

@@ -1,17 +1,135 @@
-# yavka
+# Явка
 
-A new Flutter project.
+Приложение для быстрой отметки посещаемости: кто пришёл, кто опоздал, кто
+не пришёл и у кого уважительная причина.
 
-## Getting Started
+## Возможности
 
-This project is a starting point for a Flutter application.
+- Список группы и 4 кнопки отметки: «Пришёл», «Непришёл», «Опоздал»,
+  «По уважительной».
+- «Непришёл» подтверждается вторым нажатием с выбором времени
+  (по умолчанию — текущее).
+- Отметки сохраняются локально и не теряются при перезапуске.
+- Синхронизация с Google Таблицей на Google Диске.
+- Автосохранение изменений в таблицу (можно отключить).
+- Загрузка отметок из таблицы — удобно, если группу отмечали с другого
+  устройства.
+- Подходит, если пользователь — не владелец таблицы, а её редактор
+  (со-владелец): приложение не меняет права доступа и не удаляет файлы.
 
-A few resources to get you started if this is your first Flutter project:
+## Запуск
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```bash
+flutter pub get
+flutter run
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Запуск на устройствах выполняет человек. Тесты и анализатор:
+
+```bash
+flutter analyze
+flutter test
+```
+
+## Интеграция с Google Диском (Google Таблицы)
+
+Данные хранятся в обычной Google Таблице. Приложение читает и записывает
+лист `Посещаемость` через Google Sheets API. Таблица при этом лежит на
+Google Диске и открывается в браузере.
+
+### 1. Google Cloud Console
+
+1. Создайте проект в [Google Cloud Console](https://console.cloud.google.com/).
+2. Включите **Google Sheets API** (APIs & Services → Library).
+3. Настройте **OAuth consent screen**:
+   - тип приложения — External;
+   - добавьте себя (и тех, кто будет пользоваться приложением) в
+     **Test users**, пока приложение не прошло проверку Google.
+4. Создайте OAuth-клиент (APIs & Services → Credentials):
+
+   | Платформа | Тип клиента | Что нужно |
+   |---|---|---|
+   | Android, iOS, Linux, Windows | **Desktop app** | Client ID и Client Secret |
+   | Web | **Web application** | Client ID и Authorized JavaScript origins |
+
+   Для web добавьте адрес, на котором запущено приложение, например
+   `http://localhost:8080`, в **Authorized JavaScript origins**.
+
+### 2. Передача Client ID в приложение
+
+Вариант А — при сборке/запуске:
+
+```bash
+flutter run -d linux \
+  --dart-define=GOOGLE_CLIENT_ID=ваш-client-id.apps.googleusercontent.com \
+  --dart-define=GOOGLE_CLIENT_SECRET=ваш-client-secret
+
+# web
+flutter run -d chrome \
+  --dart-define=GOOGLE_WEB_CLIENT_ID=ваш-web-client-id.apps.googleusercontent.com
+```
+
+Вариант Б — прямо в приложении: иконка облака в шапке → «Настройки OAuth» →
+вставить Client ID/Secret → «Сохранить настройки OAuth». Значения хранятся
+локально на устройстве.
+
+### 3. Подключение таблицы
+
+1. Нажмите иконку облака в шапке.
+2. Войдите через Google.
+3. Вставьте ссылку на существующую таблицу или нажмите «Создать таблицу».
+4. Поставьте отметки — они отправятся в таблицу автоматически.
+
+Если таблица принадлежит другому человеку, попросите у него доступ
+**«Редактор»** и вставьте ссылку на таблицу. Владельцем останется он —
+приложению достаточно прав редактора.
+
+### Формат листа
+
+Лист `Посещаемость`, колонки:
+
+| Дата | Время | Группа | ID | ФИО | Статус |
+|---|---|---|---|---|---|
+| 2026-11-09 | 09:05 | БИТ-24-03 | 1 | Алексей Морозов | Пришёл |
+
+Строки можно править вручную: при загрузке приложение разберёт дату, время,
+группу и статус (по подписи или коду `came`, `absent`, `late`, `excused`).
+Испорченные строки пропускаются и не затираются.
+
+### Ограничения и безопасность
+
+- Приложение использует только scope
+  `https://www.googleapis.com/auth/spreadsheets`. Отдельный доступ к
+  Google Диску не запрашивается.
+- OAuth-токены сохраняются в `SharedPreferences`. Для production-сборки
+  лучше заменить хранилище на `flutter_secure_storage`.
+- Client Secret установленного приложения не является секретом по
+  документации Google, но не публикуйте его без необходимости.
+- На web refresh token не выдаётся: при истечении токена нужно войти снова.
+- Приложение не удаляет таблицу и не меняет права доступа. Если у
+  пользователя нет прав редактора, Google вернёт ошибку 403 — приложение
+  покажет понятное сообщение.
+
+## Структура
+
+```
+lib/
+  data/                  локальное хранилище, настройки, контроллер отметок
+  models/                студент, статус, отметка, сессия дня
+  screens/               экран отметки и экран Google Диска
+  services/cloud/        OAuth, Google Sheets API, синхронизация
+  theme/                 нейтральная тема Material 3
+test/                    тесты логики отметок и синхронизации
+```
+
+## Тесты
+
+- `test/attendance_marking_test.dart` — выбор студента и 4 кнопки отметки,
+  подтверждение «Непришёл» и выбор времени.
+- `test/sheet_attendance_codec_test.dart` — формат строк таблицы, разбор
+  дат/времени/статусов, объединение удалённых и локальных отметок.
+- `test/google_sheets_sync_test.dart` — создание заголовка, обновление строк
+  без дублей, фильтрация по группе и дню, ошибка прав редактора.
+- `test/google_sheets_api_test.dart` — коды ошибок Google API (401/403/404/500).
+- `test/cloud_sync_controller_test.dart` — подключение таблицы, создание
+  новой, загрузка с Диска, разбор ссылки.

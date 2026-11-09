@@ -7,8 +7,9 @@ import 'package:yavka/main.dart';
 import 'package:yavka/screens/attendance_screen.dart';
 
 void main() {
-  testWidgets('Список группы отображается, студент выбран по умолчанию',
-      (WidgetTester tester) async {
+  testWidgets('Список группы отображается, студент выбран по умолчанию', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
@@ -17,8 +18,9 @@ void main() {
     expect(find.text('Отметить: Алексей Морозов'), findsOneWidget);
   });
 
-  testWidgets('Отметка «Пришёл» применяется к выбранному студенту',
-      (WidgetTester tester) async {
+  testWidgets('Отметка «Пришёл» применяется к выбранному студенту', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
@@ -35,8 +37,9 @@ void main() {
     );
   });
 
-  testWidgets('Другой студент выбирается по тапу и получает свою отметку',
-      (WidgetTester tester) async {
+  testWidgets('Другой студент выбирается по тапу и получает свою отметку', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 
@@ -64,8 +67,9 @@ void main() {
     );
   });
 
-  testWidgets('«Непришёл» требует подтверждения и выбора времени',
-      (WidgetTester tester) async {
+  testWidgets('«Непришёл» требует подтверждения и выбора времени', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const MyApp());
     await tester.pumpAndSettle();
 

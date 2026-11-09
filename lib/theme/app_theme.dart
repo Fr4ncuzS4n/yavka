@@ -36,18 +36,20 @@ abstract final class AppTheme {
 
   static ThemeData _build(Brightness brightness) {
     final isLight = brightness == Brightness.light;
-    final scheme =
-        ColorScheme.fromSeed(seedColor: AppPalette.accent, brightness: brightness);
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppPalette.accent,
+      brightness: brightness,
+    );
     final base = ThemeData(brightness: brightness, useMaterial3: true);
     final ink = isLight ? AppPalette.ink : const Color(0xFFECECEA);
 
     return base.copyWith(
       colorScheme: scheme,
-      scaffoldBackgroundColor:
-          isLight ? AppPalette.canvas : AppPalette.canvasDark,
+      scaffoldBackgroundColor: isLight
+          ? AppPalette.canvas
+          : AppPalette.canvasDark,
       appBarTheme: AppBarTheme(
-        backgroundColor:
-            isLight ? AppPalette.canvas : AppPalette.canvasDark,
+        backgroundColor: isLight ? AppPalette.canvas : AppPalette.canvasDark,
         foregroundColor: ink,
         elevation: 0,
         scrolledUnderElevation: 0,
