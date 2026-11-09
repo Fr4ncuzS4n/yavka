@@ -8,12 +8,36 @@ class CloudSyncException implements Exception {
   String toString() => message;
 }
 
-/// Нет прав на редактирование таблицы (пользователь — читатель, а не редактор).
+/// Нет прав на редактирование таблицы (пользователь — читатель, а не
+/// редактор, либо вход выполнен не в тот аккаунт Google).
 class GooglePermissionException extends CloudSyncException {
   const GooglePermissionException()
     : super(
-        'Нет прав на редактирование таблицы. Убедитесь, что у вас есть '
-        'доступ «Редактор» (со-владелец), или создайте новую таблицу.',
+        'Не хватает доступа «Редактор» к таблице. Проверьте: '
+        '(1) вам выдали доступ «Редактор» (со-владелец), а не «Читатель»; '
+        '(2) вошёл именно тот аккаунт Google, которому '
+        'выдали доступ.',
+      );
+}
+
+/// Google Sheets API не включён в проекте OAuth-клиента — Google отвечает
+/// 403, даже если пользователь редактор таблицы.
+class GoogleSheetsApiDisabledException extends CloudSyncException {
+  const GoogleSheetsApiDisabledException()
+    : super(
+        'Google Sheets API не включён для вашего OAuth-клиента. В Google '
+        'Cloud Console откройте APIs & Services → Library, включите '
+        '«Google Sheets API» для проекта, в котором создан Client ID, '
+        'и подождите несколько минут.',
+      );
+}
+
+/// Google отклоняет запросы из-за лимита (квоты) — нужно подождать.
+class GoogleRateLimitException extends CloudSyncException {
+  const GoogleRateLimitException()
+    : super(
+        'Google временно отклоняет запросы: превышен лимит. '
+        'Подождите пару минут и повторите.',
       );
 }
 

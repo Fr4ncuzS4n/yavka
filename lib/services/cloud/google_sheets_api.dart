@@ -175,34 +175,63 @@ class GoogleSheetsApi implements SheetsApi {
   void _checkResponse(http.Response response) {
     if (response.statusCode >= 200 && response.statusCode < 300) return;
 
+    final apiError = ParsedGoogleError.fromJsonBody(response.body);
+
     switch (response.statusCode) {
       case 401:
         throw const GoogleAuthRequiredException();
       case 403:
+        // Пользователь может быть редактором, но получить 403 по другой
+        // причине — например, Sheets API не включён в проекте клиента.
+        if (_isSheetsApiDisabled(apiError)) {
+          throw const GoogleSheetsApiDisabledException();
+        }
+        if (_isRateLimited(response.statusCode, apiError)) {
+          throw const GoogleRateLimitException();
+        }
         throw const GooglePermissionException();
+      case 429:
+        throw const GoogleRateLimitException();
       case 404:
         throw const SpreadsheetNotFoundException();
     }
 
-    String? apiMessage;
-    try {
-      final decoded = jsonDecode(response.body);
-      if (decoded is Map) {
-        final error = decoded['error'];
-        if (error is Map) {
-          apiMessage = error['message']?.toString();
-        }
-      }
-    } catch (_) {
-      // Тело ошибки может быть не JSON.
-    }
-
+    final apiMessage = apiError?.message;
     throw GoogleApiException(
       apiMessage == null
           ? 'Google Таблицы вернули ошибку (HTTP ${response.statusCode}).'
           : 'Google Таблицы: $apiMessage',
       statusCode: response.statusCode,
     );
+  }
+
+  // Настоящее сообщение Google для отключённого API:
+  // «Google Sheets API has not been used in project NNN before
+  // or it is disabled. …»
+  bool _isSheetsApiDisabled(ParsedGoogleError? error) {
+    final message = error?.message?.toLowerCase() ?? '';
+    return message.contains('has not been used in') &&
+        message.contains('disabled');
+  }
+
+  bool _isRateLimited(int statusCode, ParsedGoogleError? error) {
+    const rateLimitReasons = {
+      'rateLimitExceeded',
+      'userRateLimitExceeded',
+      'dailyLimitExceeded',
+      'RATE_LIMIT_EXCEEDED',
+    };
+    if (error != null) {
+      if (error.reasons.any(rateLimitReasons.contains)) return true;
+      if (error.status == 'RESOURCE_EXHAUSTED') return true;
+    }
+    if (statusCode == 429) return true;
+
+    final message = error?.message?.toLowerCase();
+    if (message == null) return false;
+    return message.contains('rate limit') ||
+        message.contains('rate exceeded') ||
+        message.contains('too many requests');
   }
 
   Map<String, dynamic> _decode(http.Response response) {
@@ -242,5 +271,52 @@ class GoogleSheetsApi implements SheetsApi {
     }
 
     return SpreadsheetMeta(id: id, title: title, url: url, tabs: tabs);
+  }
+}
+
+/// Разобранное тело ошибки Google API.
+///
+/// Формат: `{"error": {"code": 403, "message": "…", "status":
+/// "PERMISSION_DENIED", "errors": [{"reason": "rateLimitExceeded"}]}}`.
+class ParsedGoogleError {
+  const ParsedGoogleError({
+    this.message,
+    this.status,
+    this.reasons = const [],
+  });
+
+  final String? message;
+  final String? status;
+  final List<String> reasons;
+
+  /// Reasons из `error.errors[].reason` (старый формат Google).
+  static ParsedGoogleError? fromJsonBody(String body) {
+    Map<String, dynamic> error;
+    try {
+      final decoded = jsonDecode(body);
+      if (decoded is! Map) return null;
+      final raw = decoded['error'];
+      if (raw is! Map) return null;
+      error = Map<String, dynamic>.from(raw);
+    } catch (_) {
+      // Тело ошибки может быть не JSON — показываем общее сообщение.
+      return null;
+    }
+
+    final reasons = <String>[];
+    final errors = error['errors'];
+    if (errors is List) {
+      for (final item in errors) {
+        if (item is! Map) continue;
+        final reason = item['reason']?.toString();
+        if (reason != null && reason.isNotEmpty) reasons.add(reason);
+      }
+    }
+
+    return ParsedGoogleError(
+      message: error['message']?.toString(),
+      status: error['status']?.toString(),
+      reasons: reasons,
+    );
   }
 }

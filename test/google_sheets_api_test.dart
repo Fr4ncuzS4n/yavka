@@ -19,7 +19,11 @@ void main() {
         expect(request.headers['Authorization'], 'Bearer test-token');
         return http.Response(
           jsonEncode({
-            'error': {'message': 'The caller does not have permission'},
+            'error': {
+              'code': 403,
+              'message': 'The caller does not have permission',
+              'status': 'PERMISSION_DENIED',
+            },
           }),
           403,
         );
@@ -29,6 +33,66 @@ void main() {
     expect(
       () => api.getSpreadsheet('spreadsheet-id'),
       throwsA(isA<GooglePermissionException>()),
+    );
+  });
+
+  test('403 из-за отключённого Sheets API не путают с правами', () async {
+    final api = apiWith(
+      MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'error': {
+              'code': 403,
+              'message': 'Google Sheets API has not been used in project '
+                  '12345 before or it is disabled. Enable it by visiting '
+                  'https://console.developers.google.com/apis/api/'
+                  'sheets.googleapis.com/overview?project=12345 then retry.',
+              'status': 'PERMISSION_DENIED',
+            },
+          }),
+          403,
+        ),
+      ),
+    );
+
+    expect(
+      () => api.getSpreadsheet('spreadsheet-id'),
+      throwsA(isA<GoogleSheetsApiDisabledException>()),
+    );
+  });
+
+  test('403 превышения лимита не путают с правами редактора', () async {
+    final api = apiWith(
+      MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'error': {
+              'code': 403,
+              'message': 'Quota exceeded',
+              'errors': [
+                {'reason': 'userRateLimitExceeded'},
+              ],
+            },
+          }),
+          403,
+        ),
+      ),
+    );
+
+    expect(
+      () => api.getSpreadsheet('spreadsheet-id'),
+      throwsA(isA<GoogleRateLimitException>()),
+    );
+  });
+
+  test('429 предлагает подождать, а не проверять права', () async {
+    final api = apiWith(
+      MockClient((request) async => http.Response('', 429)),
+    );
+
+    expect(
+      () => api.getSpreadsheet('spreadsheet-id'),
+      throwsA(isA<GoogleRateLimitException>()),
     );
   });
 
