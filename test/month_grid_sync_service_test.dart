@@ -106,6 +106,33 @@ void main() {
     expect(second.updatedCells, 0);
   });
 
+  test('новый лист расширяется с 26 колонок до ширины журнала', () async {
+    // Репродукция пользовательской ошибки: Google создаёт новый лист
+    // дефолтным 1000x26, а шапка журнала требует 2 + 30·4 = 122 колонки.
+    // Валидация Google отклоняла такой пакет с 400 INVALID_ARGUMENT —
+    // теперь лист сначала расширяется, и ошибка невозможна.
+    final api = FakeSheetsApi();
+    final sync = service(api);
+
+    final result = await sync.push(
+      spreadsheetId: 'sid',
+      month: month, // НОЯБРЬ 2026: 2 + 30·4 = 122 колонки
+      session: sessionWith({
+        '1': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 8),
+        ),
+      }),
+    );
+
+    expect(result.sheetCreated, isTrue);
+    // Дефолт 26 колонок вырос до ширины журнала.
+    expect(api.columnCountOf(title), 122);
+    // Шапка нарисована целиком: у последнего (30-го) дня последний блок
+    // пары — колонка 121, в строке «ПАРА» там «4».
+    expect(api.cell(title, 2, 121).value, '4');
+  });
+
   test('чужие отметки на листе не затираются, если локальных нет', () async {
     final api = FakeSheetsApi();
     seedJournal(

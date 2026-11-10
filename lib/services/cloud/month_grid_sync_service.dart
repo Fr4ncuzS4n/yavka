@@ -122,6 +122,7 @@ class MonthGridSyncService {
         spreadsheetId: spreadsheetId,
         month: monthDate,
         sheetId: _tabId(meta.tabs, actualTitle),
+        columnCount: grid?.colCount ?? 0,
       );
       // Перечитываем сетку, чтобы поверх шапки ничего не затирать.
       grid = await _api.getSheetGrid(spreadsheetId, actualTitle);
@@ -466,8 +467,10 @@ class MonthGridSyncService {
     required String spreadsheetId,
     required DateTime month,
     required int sheetId,
+    required int columnCount,
   }) async {
     final header = MonthGridCodec.buildHeader(month);
+    final totalColumns = header.first.length;
 
     final rows = <Map<String, Object?>>[];
     for (var rowIndex = 0; rowIndex < header.length; rowIndex++) {
@@ -498,6 +501,21 @@ class MonthGridSyncService {
     }
 
     final requests = <Map<String, Object?>>[
+      // Новый лист Google создаётся дефолтным 1000×26, а журналу ноября
+      // нужны 2 + 30·4 = 122 колонки. Google строго проверяет границы:
+      // запросы за пределами сетки отклоняются целиком (400 INVALID
+      // ARGUMENT), поэтому сначала расширяем лист. Уменьшать размеры
+      // нельзя — растим только когда реально не хватает.
+      if (columnCount < totalColumns)
+        {
+          'updateSheetProperties': {
+            'properties': {
+              'sheetId': sheetId,
+              'gridProperties': {'columnCount': totalColumns},
+            },
+            'fields': 'gridProperties.columnCount',
+          },
+        },
       _updateCells(
         sheetId: sheetId,
         rowIndex: 0,
@@ -526,10 +544,7 @@ class MonthGridSyncService {
             'sheetId': sheetId,
             'dimension': 'COLUMNS',
             'startIndex': MonthGridCodec.firstDayColumn,
-            'endIndex':
-                MonthGridCodec.firstDayColumn +
-                MonthGridCodec.daysInMonth(month) *
-                    MonthGridCodec.pairsPerDay,
+            'endIndex': totalColumns,
           },
           'properties': {'pixelSize': 34},
           'fields': 'pixelSize',

@@ -69,12 +69,22 @@ class FakeSheetsApi implements SheetsApi {
   /// Сколько объединений нарисовано на листе.
   int mergeCount(String title) => _sheets[title]?.merges.length ?? 0;
 
+  /// Текущая ширина листа в колонках (после расширения).
+  int columnCountOf(String title) => _sheets[title]?.columnCount ?? 0;
+
   /// Заполняет лист из ресурсных строк: текст, заливка, флаги bold.
   ///
   /// Используется тестами, чтобы воссоздать привычный вид журнала.
   void seedSheet(String title, List<List<SeedCell?>> rows) {
     final sheet = _ensure(title);
     sheet.merges.clear();
+    // Явное заполнение может быть шире дефолтных 26 колонок Google.
+    final width = rows.fold<int>(
+      0,
+      (longest, row) => row.length > longest ? row.length : longest,
+    );
+    if (width > sheet.columnCount) sheet.columnCount = width;
+    if (rows.length > sheet.rowCount) sheet.rowCount = rows.length;
     for (var row = 0; row < rows.length; row++) {
       for (var column = 0; column < rows[row].length; column++) {
         final cell = rows[row][column];
@@ -127,15 +137,20 @@ class FakeSheetsApi implements SheetsApi {
     if (failGet) throw const GooglePermissionException();
     final sheet = _sheets[sheetTitle];
     if (sheet == null) return null;
+    final width = sheet.columnCount > sheet.maxColumns
+        ? sheet.columnCount
+        : sheet.maxColumns;
     return SheetGrid(
       title: sheet.title,
-      rowCount: sheet.rows.length,
-      colCount: sheet.maxColumns,
+      rowCount: sheet.rowCount,
+      colCount: width,
       rows: [
-        for (final cells in sheet.rows)
+        for (var i = 0; i < sheet.rowCount; i++)
           [
-            for (var i = 0; i < sheet.maxColumns; i++)
-              i < cells.length ? cells[i] : const GridCell(),
+            for (var j = 0; j < width; j++)
+              (i < sheet.rows.length && j < sheet.rows[i].length)
+                  ? sheet.rows[i][j]
+                  : const GridCell(),
           ],
       ],
       merges: [...sheet.merges],
@@ -149,6 +164,14 @@ class FakeSheetsApi implements SheetsApi {
   ) async {
     if (failBatchUpdate) throw const GooglePermissionException();
     for (final request in requests) {
+      final updateSheetProps = request['updateSheetProperties'];
+      if (updateSheetProps is Map) {
+        _applySheetProperties(updateSheetProps.cast<String, Object?>());
+      }
+      final dimProps = request['updateDimensionProperties'];
+      if (dimProps is Map) {
+        _applyDimensionProperties(dimProps.cast<String, Object?>());
+      }
       final updateCells = request['updateCells'];
       if (updateCells is Map) {
         _applyUpdateCells(
@@ -164,6 +187,65 @@ class FakeSheetsApi implements SheetsApi {
         _applyUnmergeCells(unmergeCells.cast<String, Object?>());
       }
     }
+  }
+
+  GoogleApiException _invalidArgument(String detail) => GoogleApiException(
+    'request contains an invalid argument. $detail',
+    statusCode: 400,
+  );
+
+  /// Как настоящий Google: уменьшать размеры листа нельзя, только
+  /// увеличить.
+  void _applySheetProperties(Map<String, Object?> updateSheetProps) {
+    final properties = updateSheetProps['properties'];
+    if (properties is! Map) return;
+    final sheet = _sheetsById(properties['sheetId']);
+    if (sheet == null) throw _invalidArgument('нет листа с таким id');
+
+    final grid = properties['gridProperties'];
+    if (grid is! Map) return;
+    final rowCount = (grid['rowCount'] as num?)?.toInt();
+    final columnCount = (grid['columnCount'] as num?)?.toInt();
+
+    if (rowCount != null) {
+      if (rowCount < sheet.rowCount) {
+        throw _invalidArgument('rowCount уменьшен с ${sheet.rowCount}');
+      }
+      sheet.rowCount = rowCount;
+    }
+    if (columnCount != null) {
+      if (columnCount < sheet.columnCount) {
+        throw _invalidArgument('columnCount уменьшен с ${sheet.columnCount}');
+      }
+      sheet.columnCount = columnCount;
+    }
+  }
+
+  /// Как настоящий Google: свойства размеров можно менять только внутри
+  /// текущей сетки листа, иначе запрос целиком отклоняется (400).
+  void _applyDimensionProperties(Map<String, Object?> dimProps) {
+    final range = dimProps['range'];
+    if (range is! Map) return;
+    final sheet = _sheetsById(range['sheetId']);
+    if (sheet == null) throw _invalidArgument('нет листа с таким id');
+
+    final endIndex = (range['endIndex'] as num?)?.toInt();
+    if (endIndex == null) return;
+    switch (range['dimension']?.toString()) {
+      case 'COLUMNS':
+        if (endIndex > sheet.columnCount) {
+          throw _invalidArgument(
+            'колонки $endIndex вне ширины ${sheet.columnCount}',
+          );
+        }
+      case 'ROWS':
+        if (endIndex > sheet.rowCount) {
+          throw _invalidArgument(
+            'строки $endIndex вне высоты ${sheet.rowCount}',
+          );
+        }
+    }
+    // Значения width (pixelSize) fake не хранит.
   }
 
   void _applyUpdateCells(Map<String, Object?> updateCells) {
@@ -207,7 +289,12 @@ class FakeSheetsApi implements SheetsApi {
     final range = mergeCells['range'];
     if (range is! Map) return;
     final sheet = _sheetsById(range['sheetId']);
-    if (sheet == null) return;
+    if (sheet == null) throw _invalidArgument('нет листа с таким id');
+    final endRowIndex = (range['endRowIndex'] as num?)?.toInt() ?? 0;
+    final endColumnIndex = (range['endColumnIndex'] as num?)?.toInt() ?? 0;
+    if (endRowIndex > sheet.rowCount || endColumnIndex > sheet.columnCount) {
+      throw _invalidArgument('мерж вне сетки листа');
+    }
     final merge = GridMerge(
       startRow: (range['startRowIndex'] as num?)?.toInt() ?? 0,
       startColumn: (range['startColumnIndex'] as num?)?.toInt() ?? 0,
@@ -285,6 +372,11 @@ class _FakeSheet {
 
   final int id;
   final String title;
+
+  // Как в Google: новый лист создаётся дефолтным 1000x26.
+  int rowCount = 1000;
+  int columnCount = 26;
+
   final List<List<GridCell>> rows = [];
   final List<GridMerge> merges = [];
   final Set<String> boldCells = {};
