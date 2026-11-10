@@ -4,7 +4,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 class CloudSettings {
   const CloudSettings({
     this.spreadsheetId,
-    this.sheetTitle = 'Посещаемость',
+    this.sheetYear,
+    this.sheetMonth,
     this.autoSync = true,
     this.clientId,
     this.clientSecret,
@@ -14,8 +15,10 @@ class CloudSettings {
   /// ID таблицы из ссылки `docs.google.com/spreadsheets/d/<ID>/edit`.
   final String? spreadsheetId;
 
-  /// Название листа внутри таблицы.
-  final String sheetTitle;
+  /// Выбранный месяц листа посещаемости (год и месяц отдельно),
+  /// чтобы хранить настройки в SharedPreferences.
+  final int? sheetYear;
+  final int? sheetMonth;
 
   /// Автоматически отправлять отметки после изменения.
   final bool autoSync;
@@ -36,9 +39,18 @@ class CloudSettings {
       ? 'https://docs.google.com/spreadsheets/d/$spreadsheetId/edit'
       : '';
 
+  /// Месяц листа, если он выбран и корректен.
+  DateTime? get selectedSheetMonth {
+    final year = sheetYear;
+    final month = sheetMonth;
+    if (year == null || month == null || month < 1 || month > 12) return null;
+    return DateTime(year, month);
+  }
+
   CloudSettings copyWith({
     String? spreadsheetId,
-    String? sheetTitle,
+    int? sheetYear,
+    int? sheetMonth,
     bool? autoSync,
     String? clientId,
     String? clientSecret,
@@ -49,7 +61,8 @@ class CloudSettings {
     spreadsheetId: clearSpreadsheet
         ? null
         : (spreadsheetId ?? this.spreadsheetId),
-    sheetTitle: sheetTitle ?? this.sheetTitle,
+    sheetYear: sheetYear ?? this.sheetYear,
+    sheetMonth: sheetMonth ?? this.sheetMonth,
     autoSync: autoSync ?? this.autoSync,
     clientId: clientId ?? this.clientId,
     clientSecret: clearClientSecret
@@ -84,7 +97,8 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
   SharedPreferencesCloudSettingsStore(this._preferences);
 
   static const _spreadsheetIdKey = 'yavka.cloud.spreadsheet_id';
-  static const _sheetTitleKey = 'yavka.cloud.sheet_title';
+  static const _sheetYearKey = 'yavka.cloud.sheet_year';
+  static const _sheetMonthKey = 'yavka.cloud.sheet_month';
   static const _autoSyncKey = 'yavka.cloud.auto_sync';
   static const _clientIdKey = 'yavka.cloud.client_id';
   static const _clientSecretKey = 'yavka.cloud.client_secret';
@@ -95,14 +109,12 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
   @override
   Future<CloudSettings> load() async {
     final spreadsheetId = _preferences.getString(_spreadsheetIdKey);
-    final sheetTitle = _preferences.getString(_sheetTitleKey);
     return CloudSettings(
       spreadsheetId: spreadsheetId == null || spreadsheetId.trim().isEmpty
           ? null
           : spreadsheetId.trim(),
-      sheetTitle: sheetTitle == null || sheetTitle.trim().isEmpty
-          ? 'Посещаемость'
-          : sheetTitle.trim(),
+      sheetYear: _preferences.getInt(_sheetYearKey),
+      sheetMonth: _preferences.getInt(_sheetMonthKey),
       autoSync: _preferences.getBool(_autoSyncKey) ?? true,
       clientId: _preferences.getString(_clientIdKey),
       clientSecret: _preferences.getString(_clientSecretKey),
@@ -117,7 +129,14 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
         _preferences.remove(_spreadsheetIdKey)
       else
         _preferences.setString(_spreadsheetIdKey, settings.spreadsheetId!),
-      _preferences.setString(_sheetTitleKey, settings.sheetTitle),
+      if (settings.sheetYear == null)
+        _preferences.remove(_sheetYearKey)
+      else
+        _preferences.setInt(_sheetYearKey, settings.sheetYear!),
+      if (settings.sheetMonth == null)
+        _preferences.remove(_sheetMonthKey)
+      else
+        _preferences.setInt(_sheetMonthKey, settings.sheetMonth!),
       _preferences.setBool(_autoSyncKey, settings.autoSync),
       if (settings.clientId == null)
         _preferences.remove(_clientIdKey)

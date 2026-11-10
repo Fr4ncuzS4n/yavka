@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
+import '../data/ui_settings.dart';
 import '../models/attendance_entry.dart';
 import '../models/attendance_status.dart';
 import '../models/student.dart';
@@ -8,6 +9,7 @@ import '../services/cloud/cloud_sync_controller.dart';
 import '../theme/app_theme.dart';
 import '../theme/status_style.dart';
 import 'cloud_sync_screen.dart';
+import 'settings_screen.dart';
 
 /// Ключ списка группы (используется в тестах).
 const kStudentListKey = Key('student-list');
@@ -23,7 +25,12 @@ const _kGap = 12.0;
 /// «Непришёл» подтверждается вторым нажатием с выбором времени
 /// (по умолчанию — текущее).
 class AttendanceScreen extends StatefulWidget {
-  const AttendanceScreen({super.key, this.attendance, this.cloud});
+  const AttendanceScreen({
+    super.key,
+    this.attendance,
+    this.cloud,
+    this.uiSettings,
+  });
 
   /// Состояние посещаемости. Если не передано — создаётся пример группы
   /// (удобно для тестов и превью).
@@ -31,6 +38,10 @@ class AttendanceScreen extends StatefulWidget {
 
   /// Облачная синхронизация. Если `null`, кнопка Google Диска не показывается.
   final CloudSyncController? cloud;
+
+  /// Выборный дизайн («Настройки → Дизайн»). Если `null`, кнопка
+  /// с шестерёнкой скрывается.
+  final UiSettingsController? uiSettings;
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -118,6 +129,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         title: _buildTitle(context),
         actions: [
           if (widget.cloud != null) _buildCloudAction(context),
+          if (widget.uiSettings != null)
+            IconButton(
+              tooltip: 'Дизайн',
+              onPressed: () => _openSettings(context),
+              icon: const Icon(Icons.palette_outlined),
+            ),
           const SizedBox(width: 4),
         ],
       ),
@@ -179,6 +196,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (cloud == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => CloudSyncScreen(cloud: cloud)),
+    );
+  }
+
+  void _openSettings(BuildContext context) {
+    final settings = widget.uiSettings;
+    if (settings == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(settings: settings),
+      ),
     );
   }
 

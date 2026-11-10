@@ -8,6 +8,7 @@ import 'data/attendance_controller.dart';
 import 'data/attendance_store.dart';
 import 'data/cloud_settings.dart';
 import 'data/example_group.dart';
+import 'data/ui_settings.dart';
 import 'models/attendance_session.dart';
 import 'screens/attendance_screen.dart';
 import 'services/cloud/cloud_sync_controller.dart';
@@ -22,6 +23,7 @@ Future<void> main() async {
 
   var attendance = AttendanceController.inMemory();
   CloudSyncController? cloud;
+  UiSettingsController? settings;
 
   try {
     final preferences = await SharedPreferences.getInstance();
@@ -45,6 +47,7 @@ Future<void> main() async {
       settingsStore: SharedPreferencesCloudSettingsStore(preferences),
       isWeb: kIsWeb,
     );
+    settings = UiSettingsController(preferences: preferences);
   } catch (error, stackTrace) {
     // Приложение должно запускаться даже без локального хранилища —
     // тогда отметки живут только в памяти.
@@ -53,28 +56,61 @@ Future<void> main() async {
     );
   }
 
-  runApp(MyApp(attendance: attendance, cloud: cloud));
+  runApp(
+    AppRoot(
+      attendance: attendance,
+      cloud: cloud,
+      settings: settings,
+    ),
+  );
 
   if (cloud != null) {
     unawaited(cloud.initialize());
   }
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key, this.attendance, this.cloud});
+class AppRoot extends StatelessWidget {
+  const AppRoot({
+    super.key,
+    this.attendance,
+    this.cloud,
+    this.settings,
+  });
 
   final AttendanceController? attendance;
   final CloudSyncController? cloud;
+  final UiSettingsController? settings;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Явка',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
-      home: AttendanceScreen(attendance: attendance, cloud: cloud),
+    if (settings == null) {
+      return MaterialApp(
+        title: 'Явка',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
+        home: AttendanceScreen(attendance: attendance, cloud: cloud),
+      );
+    }
+
+    final controller = settings!;
+    return ListenableBuilder(
+      listenable: controller,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'Явка',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.light(controller.accent),
+          darkTheme: AppTheme.dark(controller.accent),
+          themeMode: controller.themeMode,
+          home: AttendanceScreen(
+            attendance: attendance,
+            cloud: cloud,
+            uiSettings: controller,
+          ),
+        );
+      },
     );
   }
 }

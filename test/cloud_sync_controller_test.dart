@@ -7,16 +7,19 @@ import 'package:yavka/models/attendance_status.dart';
 import 'package:yavka/models/student.dart';
 import 'package:yavka/services/cloud/cloud_sync_controller.dart';
 import 'package:yavka/services/cloud/google_auth_service.dart';
+import 'package:yavka/services/cloud/month_grid_codec.dart';
 import 'package:yavka/services/cloud/oauth/oauth_models.dart';
-import 'package:yavka/services/cloud/sheet_attendance_codec.dart';
 import 'package:yavka/services/cloud/token_store.dart';
 
 import 'support/fake_sheets_api.dart';
+import 'support/month_journal_fixture.dart';
 
 void main() {
   const group = 'БИТ-24-03';
-  final date = DateTime(2026, 11, 9);
+  final date = DateTime(2026, 11, 9); // понедельник 9 ноября
+  final month = DateTime(2026, 11);
   const alexey = Student(id: '1', fullName: 'Алексей Морозов');
+  const title = 'Ноябрь 2026';
 
   AttendanceController attendanceWith(Map<String, AttendanceEntry> entries) =>
       AttendanceController(
@@ -34,9 +37,9 @@ void main() {
     MemoryCloudSettingsStore settings,
     AttendanceController attendance,
   })
-  build({Map<String, AttendanceEntry>? entries, bool failAppend = false}) {
+  build({Map<String, AttendanceEntry>? entries, bool failBatchUpdate = false}) {
     final attendance = attendanceWith(entries ?? {});
-    final api = FakeSheetsApi()..failAppend = failAppend;
+    final api = FakeSheetsApi()..failBatchUpdate = failBatchUpdate;
     final settings = MemoryCloudSettingsStore(
       const CloudSettings(
         clientId: 'test-client-id.apps.googleusercontent.com',
@@ -70,7 +73,14 @@ void main() {
     expect(parseSpreadsheetId(''), isNull);
   });
 
-  test('подключение таблицы сохраняет ID и отправляет отметки', () async {
+  test('по умолчанию выбран месяц сессии', () {
+    final env = build();
+    expect(env.cloud.selectedMonth.year, 2026);
+    expect(env.cloud.selectedMonth.month, 11);
+  });
+
+  test('подключение таблицы сохраняет ID и пишет отметки в лист месяца',
+      () async {
     const id = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
     final env = build(
       entries: {
@@ -90,11 +100,17 @@ void main() {
     expect(env.cloud.error, isNull);
     expect(env.cloud.spreadsheetId, id);
     expect((await env.settings.load()).spreadsheetId, id);
-    expect(env.api.rowsFor('Посещаемость'), hasLength(2));
-    expect(env.api.rowsFor('Посещаемость')[1][5], 'Пришёл');
+
+    // Лист месяца создан, отметка «пришёл» лежит в заливке блока дня.
+    expect(env.api.hasSheet(title), isTrue);
+    final day9 = MonthGridCodec.firstColumnOf(month, 9);
+    expect(env.api.cell(title, 3, day9).backgroundColor, 0x00CC00);
+    // Студент добавлен списком под шапкой.
+    expect(env.api.cell(title, 3, 1).value, 'Алексей Морозов');
   });
 
-  test('создание новой таблицы подключает её и пишет заголовок', () async {
+  test('создание новой таблицы подключает её и рисует шапку-журнал',
+      () async {
     final env = build();
 
     await env.cloud.initialize();
@@ -103,7 +119,11 @@ void main() {
 
     expect(env.cloud.error, isNull);
     expect(env.cloud.spreadsheetId, 'created-spreadsheet');
-    expect(env.api.rowsFor('Посещаемость').first, SheetAttendanceCodec.header);
+    expect(env.api.hasSheet(title), isTrue);
+    expect(env.api.cell(title, 0, 1).value, 'НОЯБРЬ');
+    expect(env.api.cell(title, 1, 0).value, '№');
+    expect(env.api.cell(title, 1, 1).value, 'ФИО');
+    expect(env.api.mergeCount(title), 2 * 30);
   });
 
   test('загрузка с Диска обновляет локальные отметки', () async {
@@ -116,30 +136,75 @@ void main() {
         ),
       },
     );
+    seedJournal(
+      env.api,
+      month: month,
+      students: const [alexey],
+      marks: {
+        9: {
+          '1': AttendanceEntry(
+            status: AttendanceStatus.late,
+            markedAt: DateTime(2026, 11, 9, 9, 40),
+          ),
+        },
+      },
+    );
 
     await env.cloud.initialize();
     await env.cloud.signIn();
     await env.cloud.connectSpreadsheet(id);
 
-    env.api.setRows('Посещаемость', [
-      SheetAttendanceCodec.header,
-      SheetAttendanceCodec.encode(
-        AttendanceRecord(
-          groupName: group,
-          date: date,
-          student: alexey,
-          entry: AttendanceEntry(
-            status: AttendanceStatus.late,
-            markedAt: DateTime(2026, 11, 9, 9, 40),
-          ),
-        ),
-      ),
-    ]);
-
-    await env.cloud.pullNow();
-
+    // Отметка листа (опоздал к 9:40) победила локальную.
     expect(env.attendance.entryFor('1')?.status, AttendanceStatus.late);
+    expect(env.attendance.entryFor('1')?.markedAt, DateTime(2026, 11, 9, 9, 40));
     expect(env.cloud.error, isNull);
+  });
+
+  test('список группы подтягивается с листа', () async {
+    const id = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
+    const maria = Student(id: '2', fullName: 'Мария Соколова');
+    final env = build();
+    seedJournal(
+      env.api,
+      month: month,
+      students: const [alexey, maria],
+    );
+
+    await env.cloud.initialize();
+    await env.cloud.signIn();
+    await env.cloud.connectSpreadsheet(id);
+
+    expect(env.attendance.students.map((s) => s.fullName), contains(maria.fullName));
+    expect(env.attendance.students.map((s) => s.fullName), contains(alexey.fullName));
+  });
+
+  test('выбор месяца сохраняется и переключает лист журнала', () async {
+    const id = '1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789';
+    final env = build();
+
+    await env.cloud.initialize();
+    await env.cloud.signIn();
+    await env.cloud.connectSpreadsheet(id);
+
+    // Лист ноября появился от автосинхронизации при подключении.
+    expect(env.api.hasSheet(title), isTrue);
+
+    await env.cloud.selectMonth(DateTime(2026, 10));
+
+    expect(env.cloud.error, isNull);
+    expect(env.cloud.selectedMonth.year, 2026);
+    expect(env.cloud.selectedMonth.month, 10);
+
+    final stored = await env.settings.load();
+    expect(stored.sheetYear, 2026);
+    expect(stored.sheetMonth, 10);
+
+    await env.cloud.syncNow();
+
+    // В новом месяце свой лист с шапкой; ноябрьский не тронут.
+    expect(env.api.hasSheet('Октябрь 2026'), isTrue);
+    expect(env.api.cell('Октябрь 2026', 0, 1).value, 'ОКТЯБРЬ');
+    expect(env.api.cell('Октябрь 2026', 1, 0).value, '№');
   });
 
   test('ошибка прав редактора сохраняется в состоянии', () async {
@@ -150,7 +215,7 @@ void main() {
           markedAt: DateTime(2026, 11, 9, 9),
         ),
       },
-      failAppend: true,
+      failBatchUpdate: true,
     );
 
     await env.cloud.initialize();

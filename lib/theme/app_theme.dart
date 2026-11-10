@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 
 /// Нейтральная палитра «Явки».
 ///
-/// База — тёплый серый, акцент — спокойный бирюзовый. Цвета статусов
-/// вынесены в `status_style.dart`. Никаких гендерных стереотипов:
-/// дизайн подходит любому старосте.
+/// База — тёплый серый, акцент пользователь выбирает в настройках.
+/// Цвета статусов вынесены в `status_style.dart`. Никаких гендерных
+/// стереотипов: дизайн подходит любому старосте.
 abstract final class AppPalette {
-  /// Акцент приложения.
+  /// Акцент приложения по умолчанию.
   static const accent = Color(0xFF176B62);
 
   /// Основной текст.
@@ -28,16 +28,35 @@ abstract final class AppPalette {
   static const cardDark = Color(0xFF1C1D22);
 }
 
-/// Темы приложения: светлая и тёмная.
+/// Варианты оформления на выбор — «Настройки → Дизайн».
+enum AccentVariant {
+  teal('Бирюза', Color(0xFF176B62), Color(0xFF7BDDC8)),
+  blue('Синий', Color(0xFF2B5EA8), Color(0xFF9FBFF2)),
+  clay('Терракота', Color(0xFFB0563C), Color(0xFFF0A78F)),
+  plum('Слива', Color(0xFF6D4C8F), Color(0xFFC9A8E8)),
+  olive('Олива', Color(0xFF68723B), Color(0xFFC3CD8F));
+
+  const AccentVariant(this.label, this.seed, this.seedDark);
+
+  final String label;
+  final Color seed;
+
+  /// Приглушённый вариант семени для тёмной темы.
+  final Color seedDark;
+}
+
+/// Темы приложения: светлая и тёмная, с выбранным акцентом.
 abstract final class AppTheme {
-  static ThemeData light() => _build(Brightness.light);
+  static ThemeData light([AccentVariant accent = AccentVariant.teal]) =>
+      _build(Brightness.light, accent);
 
-  static ThemeData dark() => _build(Brightness.dark);
+  static ThemeData dark([AccentVariant accent = AccentVariant.teal]) =>
+      _build(Brightness.dark, accent);
 
-  static ThemeData _build(Brightness brightness) {
+  static ThemeData _build(Brightness brightness, AccentVariant accent) {
     final isLight = brightness == Brightness.light;
     final scheme = ColorScheme.fromSeed(
-      seedColor: AppPalette.accent,
+      seedColor: isLight ? accent.seed : accent.seedDark,
       brightness: brightness,
     );
     final base = ThemeData(brightness: brightness, useMaterial3: true);

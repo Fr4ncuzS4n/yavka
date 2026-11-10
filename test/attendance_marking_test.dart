@@ -10,7 +10,7 @@ void main() {
   testWidgets('Список группы отображается, студент выбран по умолчанию', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const AppRoot());
     await tester.pumpAndSettle();
 
     expect(find.text('Группа БИТ-24-03'), findsOneWidget);
@@ -21,7 +21,7 @@ void main() {
   testWidgets('Отметка «Пришёл» применяется к выбранному студенту', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const AppRoot());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Пришёл'));
@@ -40,7 +40,7 @@ void main() {
   testWidgets('Другой студент выбирается по тапу и получает свою отметку', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const AppRoot());
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Мария Соколова'));
@@ -70,7 +70,7 @@ void main() {
   testWidgets('«Непришёл» требует подтверждения и выбора времени', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const AppRoot());
     await tester.pumpAndSettle();
 
     // Первое нажатие — предупреждение.

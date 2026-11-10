@@ -6,13 +6,19 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/attendance_controller.dart';
 import '../../data/cloud_settings.dart';
+import '../../models/attendance_session.dart';
+import '../../models/student.dart';
 import 'cloud_exceptions.dart';
 import 'google_auth_service.dart';
-import 'google_sheets_sync_service.dart';
+import 'month_grid_sync_service.dart';
 import 'oauth/oauth_models.dart';
 import 'sheets_api.dart';
 
 /// Управляет подключением к Google Таблице и фоновой синхронизацией.
+///
+/// Отметки живут в листе месяца (например «Ноябрь 2026»): приложение
+/// находит лист по месяцу, к которому относится отметка, а выбор месяца —
+/// выпадающим списком в настройках облака.
 class CloudSyncController extends ChangeNotifier {
   CloudSyncController({
     required this.attendance,
@@ -23,7 +29,7 @@ class CloudSyncController extends ChangeNotifier {
   }) : _api = sheetsApi,
        _settingsStore = settingsStore,
        _isWeb = isWeb,
-       _sync = GoogleSheetsSyncService(sheetsApi) {
+       _sync = MonthGridSyncService(sheetsApi) {
     attendance.addListener(_onAttendanceChanged);
     auth.addListener(_onAuthChanged);
   }
@@ -32,17 +38,18 @@ class CloudSyncController extends ChangeNotifier {
   final GoogleAuthService auth;
   final SheetsApi _api;
   final CloudSettingsStore _settingsStore;
-  final GoogleSheetsSyncService _sync;
+  final MonthGridSyncService _sync;
   final bool _isWeb;
 
   CloudSettings _settings = const CloudSettings();
+  DateTime _selectedMonth = _monthOf(DateTime.now());
   bool _initialized = false;
   bool _busy = false;
   bool _pending = false;
   bool _applyingRemote = false;
   String? _error;
   DateTime? _lastSyncAt;
-  SyncResult? _lastResult;
+  GridSyncResult? _lastResult;
   Timer? _debounce;
 
   CloudSettings get settings => _settings;
@@ -61,13 +68,23 @@ class CloudSyncController extends ChangeNotifier {
 
   DateTime? get lastSyncAt => _lastSyncAt;
 
-  SyncResult? get lastResult => _lastResult;
+  GridSyncResult? get lastResult => _lastResult;
 
   String? get spreadsheetId => _settings.spreadsheetId;
 
   String get spreadsheetUrl => _settings.spreadsheetUrl;
 
   bool get autoSync => _settings.autoSync;
+
+  /// Месяц, с которым работает синхронизация.
+  DateTime get selectedMonth => _selectedMonth;
+
+  DateTime get _monthOfAttendance => _monthOf(attendance.session.date);
+
+  static DateTime _monthOf(DateTime date) => DateTime(date.year, date.month);
+
+  bool _hasAutoSyncInvolved() =>
+      isConfigured && isSignedIn && autoSync;
 
   /// Загружает настройки, восстанавливает вход и (если включена
   /// автосинхронизация) подтягивает отметки из таблицы.
@@ -80,13 +97,14 @@ class CloudSyncController extends ChangeNotifier {
     } catch (_) {
       // Настройки по умолчанию — приложение продолжит работать локально.
     }
+    _loadMonthFromSettings();
     auth.configure(_configFromSettings());
 
     _busy = true;
     notifyListeners();
     try {
       await auth.restore();
-      if (isConfigured && isSignedIn && autoSync) {
+      if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
       }
@@ -98,11 +116,20 @@ class CloudSyncController extends ChangeNotifier {
     }
   }
 
+  void _loadMonthFromSettings() {
+    final stored = _settings.selectedSheetMonth;
+    if (stored != null) {
+      _selectedMonth = DateTime(stored.year, stored.month);
+    } else {
+      _selectedMonth = _monthOfAttendance;
+    }
+  }
+
   Future<void> signIn() async {
     await _run(() async {
       auth.configure(_configFromSettings());
       await auth.signIn();
-      if (isConfigured && autoSync) {
+      if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
       }
@@ -135,7 +162,7 @@ class CloudSyncController extends ChangeNotifier {
       _pending = false;
       notifyListeners();
 
-      if (autoSync) {
+      if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
       }
@@ -180,6 +207,30 @@ class CloudSyncController extends ChangeNotifier {
     }
   }
 
+  /// Выбирает месяц журнала (выпадающий список в настройках облака).
+  Future<void> selectMonth(DateTime month) async {
+    final normalized = DateTime(month.year, month.month);
+    if (normalized == _selectedMonth) return;
+
+    _selectedMonth = normalized;
+    _error = null;
+    notifyListeners();
+    try {
+      await _settingsStore.save(
+        _settings.copyWith(sheetYear: normalized.year, sheetMonth: normalized.month),
+      );
+    } catch (error) {
+      _error = _message(error);
+      notifyListeners();
+    }
+
+    if (!_hasAutoSyncInvolved()) return;
+    await _run(() async {
+      await _pull();
+      await _push();
+    });
+  }
+
   /// Сохраняет OAuth Client ID/Secret, введённые в настройках.
   Future<void> saveOAuthConfig({
     String? clientId,
@@ -206,6 +257,7 @@ class CloudSyncController extends ChangeNotifier {
     await _run(() async {
       _requireConfigured();
       _requireSignedIn();
+      await _pull();
       await _push();
     });
   }
@@ -227,7 +279,7 @@ class CloudSyncController extends ChangeNotifier {
 
     final result = await _sync.push(
       spreadsheetId: spreadsheetId,
-      sheetTitle: _settings.sheetTitle,
+      month: _selectedMonth,
       session: attendance.session,
     );
     _lastResult = result;
@@ -241,20 +293,50 @@ class CloudSyncController extends ChangeNotifier {
     final spreadsheetId = _settings.spreadsheetId;
     if (spreadsheetId == null) return;
 
-    final merged = await _sync.pull(
-      spreadsheetId: spreadsheetId,
-      sheetTitle: _settings.sheetTitle,
-      local: attendance.session,
-    );
+    final remote = await _sync.read(spreadsheetId, _selectedMonth);
     _applyingRemote = true;
     try {
-      attendance.replaceSession(merged);
+      if (remote != null) {
+        attendance.replaceSession(
+          _mergedToday(attendance.session, remote, _selectedMonth),
+        );
+      }
     } finally {
       _applyingRemote = false;
     }
     _lastSyncAt = DateTime.now();
     _error = null;
     notifyListeners();
+  }
+
+  /// Вбирает в текущую сессию отметки листа месяца за её день.
+  AttendanceSession _mergedToday(
+    AttendanceSession local,
+    MonthSheetState remote,
+    DateTime month,
+  ) {
+    final day = local.date.day;
+    final byStudent = remote.entries[day];
+    var merged = local.withRoster(remote.students);
+    if (byStudent == null || byStudent.isEmpty) {
+      return merged;
+    }
+    final records = <AttendanceRecord>[];
+    byStudent.forEach((studentId, entry) {
+      final student = remote.students.firstWhere(
+        (item) => item.id == studentId,
+        orElse: () => Student(id: studentId, fullName: studentId),
+      );
+      records.add(
+        AttendanceRecord(
+          groupName: merged.groupName,
+          date: merged.date,
+          student: student,
+          entry: entry,
+        ),
+      );
+    });
+    return merged.mergeRemote(records);
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -300,7 +382,7 @@ class CloudSyncController extends ChangeNotifier {
     _pending = true;
     notifyListeners();
 
-    if (!autoSync || !isConfigured || !isSignedIn) return;
+    if (!_hasAutoSyncInvolved()) return;
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 1500), () {
       unawaited(syncNow());

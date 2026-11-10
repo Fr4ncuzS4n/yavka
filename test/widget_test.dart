@@ -9,7 +9,7 @@ void main() {
     WidgetTester tester,
   ) async {
     // Build the app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(const AppRoot());
 
     // Verify that all four marking buttons are present.
     expect(find.text('Пришёл'), findsOneWidget);

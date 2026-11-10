@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/cloud/cloud_sync_controller.dart';
+import '../services/cloud/month_grid_codec.dart';
 import '../theme/app_theme.dart';
 
 /// Экран подключения Google Диска и синхронизации посещаемости.
@@ -113,6 +114,15 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
               children: [
                 _StatusCard(cloud: cloud),
                 const SizedBox(height: 12),
+                if (cloud.isConfigured) ...[
+                  _MonthCard(
+                    cloud: cloud,
+                    onMonthSelected: (month) => _runAction(
+                      () => cloud.selectMonth(month),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 _SectionCard(
                   title: 'Аккаунт Google',
                   children: [
@@ -283,6 +293,100 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
         ),
       ),
     );
+  }
+}
+
+/// Выбор месяца журнала.
+///
+/// Отметка пишется в лист того месяца, к которому относится день
+/// посещаемости; обычно это текущий месяц. Выпадающим списком можно
+/// переключиться на другой лист (например, чтобы отметить задним числом
+/// на листе прошлого месяца).
+class _MonthCard extends StatelessWidget {
+  const _MonthCard({required this.cloud, required this.onMonthSelected});
+
+  final CloudSyncController cloud;
+  final void Function(DateTime month) onMonthSelected;
+
+  static const _shifts = [-6, -5, -4, -3, -2, -1, 0, 1];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final now = DateTime.now().toLocal();
+    final nowMonth = DateTime(now.year, now.month);
+    final selected = DateTime(
+      cloud.selectedMonth.year,
+      cloud.selectedMonth.month,
+    );
+
+    final items = <DropdownMenuItem<String>>[];
+    for (final shift in _shifts) {
+      final month = DateTime(nowMonth.year, nowMonth.month + shift);
+      final key =
+          '${month.year}-${month.month.toString().padLeft(2, '0')}';
+      final label =
+          '${MonthGridCodec.monthsRu[month.month - 1]} ${month.year}';
+      items.add(DropdownMenuItem(value: key, child: Text(label)));
+    }
+
+    final selectedKey =
+        '${selected.year}-${selected.month.toString().padLeft(2, '0')}';
+    final hasSelected = items.any((item) => item.value == selectedKey);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.brightness == Brightness.light
+            ? Colors.white
+            : const Color(0xFF1C1D22),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: theme.brightness == Brightness.light
+              ? AppPalette.line
+              : AppPalette.lineDark,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Месяц журнала', style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Отметки пишутся в лист выбранного месяца. Лист создаётся '
+            'автоматически, если его ещё нет.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: hasSelected ? selectedKey : null,
+            decoration: const InputDecoration(
+              labelText: 'Месяц листа посещаемости',
+              border: OutlineInputBorder(),
+              suffixIcon: Icon(Icons.calendar_month_rounded),
+            ),
+            items: items,
+            onChanged: cloud.isBusy
+                ? null
+                : (value) {
+                    final month = _parseMonthKey(value);
+                    if (month != null) onMonthSelected(month);
+                  },
+          ),
+        ],
+      ),
+    );
+  }
+
+  DateTime? _parseMonthKey(String? value) {
+    if (value == null) return null;
+    final parts = value.split('-');
+    final year = int.tryParse(parts.isNotEmpty ? parts.first : '');
+    final month = int.tryParse(parts.length > 1 ? parts.last : '');
+    if (year == null || month == null || month < 1 || month > 12) return null;
+    return DateTime(year, month);
   }
 }
 

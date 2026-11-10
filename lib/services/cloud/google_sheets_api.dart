@@ -48,8 +48,8 @@ class GoogleSheetsApi implements SheetsApi {
   }
 
   @override
-  Future<void> addSheet(String spreadsheetId, String title) async {
-    await _send(
+  Future<int> addSheet(String spreadsheetId, String title) async {
+    final response = await _send(
       'POST',
       '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}:batchUpdate',
       body: {
@@ -62,73 +62,180 @@ class GoogleSheetsApi implements SheetsApi {
         ],
       },
     );
+
+    int sheetId = 0;
+    try {
+      final decoded = _decode(response)['replies'];
+      if (decoded is List && decoded.isNotEmpty && decoded.first is Map) {
+        final reply = decoded.first as Map;
+        final added = reply['addSheet'];
+        if (added is Map) {
+          final props = added['properties'];
+          if (props is Map) {
+            sheetId = int.tryParse(props['sheetId']?.toString() ?? '') ?? 0;
+          }
+        }
+      }
+    } catch (_) {
+      // Без replies считаем номер листа нулевым — Google вернёт его
+      // в следующем чтении.
+    }
+    return sheetId;
   }
 
   @override
-  Future<List<List<Object?>>> getValues(
+  Future<SheetGrid?> getSheetGrid(
     String spreadsheetId,
-    String range,
+    String sheetTitle,
   ) async {
     final response = await _send(
       'GET',
-      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
-          '/values/${Uri.encodeComponent(range)}',
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}',
       query: {
-        'valueRenderOption': 'UNFORMATTED_VALUE',
-        'majorDimension': 'ROWS',
+        'includeGridData': 'true',
+        // Ячейки читаем по диапазону всего листа — заливки и значения.
+        'ranges': "'$sheetTitle'",
+        'fields':
+            'sheets.properties(title,sheetId),'
+            'sheets.data.gridProperties(rowCount,columnCount),'
+            'sheets.data.startRow,sheets.data.startColumn,'
+            'sheets.data.rowData.values(formattedValue,'
+            'effectiveFormat.backgroundColorStyle.rgb,'
+            'effectiveFormat.backgroundColor.rgb),'
+            'sheets.merges',
       },
     );
-    final json = _decode(response);
-    final values = json['values'];
-    if (values is! List) return const [];
-    return [
-      for (final row in values)
-        if (row is List) [for (final cell in row) cell as Object?],
-    ];
+
+    final sheets = _decode(response)['sheets'];
+    if (sheets is! List) return null;
+
+    for (final sheet in sheets) {
+      if (sheet is! Map) continue;
+      final properties = sheet['properties'];
+      if (properties is! Map) continue;
+      if (properties['title']?.toString() != sheetTitle) continue;
+      return _gridFromJson(properties, sheet);
+    }
+    return null;
   }
 
-  @override
-  Future<void> updateValues(
-    String spreadsheetId,
-    String range,
-    List<List<Object?>> values,
-  ) async {
-    await _send(
-      'PUT',
-      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
-          '/values/${Uri.encodeComponent(range)}',
-      query: {'valueInputOption': 'RAW'},
-      body: {'range': range, 'majorDimension': 'ROWS', 'values': values},
+  SheetGrid _gridFromJson(Map properties, Map sheet) {
+    final data = sheet['data'];
+    Map gridData = {};
+    if (data is List && data.isNotEmpty && data.first is Map) {
+      gridData = Map<String, dynamic>.from(data.first as Map);
+    }
+
+    final gridProperties = gridData['gridProperties'];
+    final rowCount = gridProperties is Map
+        ? int.tryParse(gridProperties['rowCount']?.toString() ?? '') ?? 0
+        : 0;
+    final columnCount = gridProperties is Map
+        ? int.tryParse(gridProperties['columnCount']?.toString() ?? '') ?? 0
+        : 0;
+
+    final startRow =
+        int.tryParse(gridData['startRow']?.toString() ?? '') ?? 0;
+    final startColumn =
+        int.tryParse(gridData['startColumn']?.toString() ?? '') ?? 0;
+
+    final rows = List.generate(
+      rowCount,
+      (_) => List.generate(columnCount, (_) => const GridCell()),
+      growable: true,
+    );
+
+    final rowData = gridData['rowData'];
+    if (rowData is List) {
+      for (var i = 0; i < rowData.length; i++) {
+        if (rowData[i] is! Map) continue;
+        final rowCells = (rowData[i] as Map)['values'];
+        final rowIndex = startRow + i;
+        if (rowIndex >= rows.length) continue;
+        if (rowCells is! List) continue;
+
+        for (var j = 0; j < rowCells.length; j++) {
+          final cell = rowCells[j];
+          if (cell is! Map) continue;
+          final value = cell['formattedValue'];
+          final format = cell['effectiveFormat'];
+          final color = format is Map ? _colorFromJson(format) : null;
+          final column = startColumn + j;
+          if (column < 0 || column >= columnCount) continue;
+          rows[rowIndex][column] = GridCell(
+            value: value,
+            backgroundColor: color,
+          );
+        }
+      }
+    }
+
+    final merges = <GridMerge>[];
+    final rawMerges = sheet['merges'];
+    if (rawMerges is List) {
+      for (final raw in rawMerges) {
+        if (raw is! Map) continue;
+        final startRow = int.tryParse(raw['startRowIndex']?.toString() ?? '');
+        final startColumn = int.tryParse(
+          raw['startColumnIndex']?.toString() ?? '',
+        );
+        final endRow =
+            int.tryParse(raw['endRowIndex']?.toString() ?? '');
+        final endColumn =
+            int.tryParse(raw['endColumnIndex']?.toString() ?? '');
+        if (startRow == null || startColumn == null) continue;
+        merges.add(
+          GridMerge(
+            startRow: startRow,
+            startColumn: startColumn,
+            rowCount: (endRow ?? startRow) - startRow,
+            colCount: (endColumn ?? startColumn) - startColumn,
+          ),
+        );
+      }
+    }
+
+    return SheetGrid(
+      title: properties['title']?.toString() ?? '',
+      rowCount: rowCount,
+      colCount: columnCount,
+      rows: rows,
+      merges: merges,
     );
   }
 
+  /// Цвет Google: `{red, green, blue}` — числа от 0 до 1.
+  int? _colorFromJson(Map format) {
+    final style = format['backgroundColorStyle'];
+    final raw = style is Map && style['rgb'] is Map
+        ? style['rgb']
+        : format['backgroundColor'];
+    if (raw is! Map) return null;
+
+    double channel(Object? value) {
+      final parsed = num.tryParse(value?.toString() ?? '') ?? 0;
+      return parsed.clamp(0.0, 1.0).toDouble();
+    }
+
+    final red = (channel(raw['red']) * 255).round();
+    final green = (channel(raw['green']) * 255).round();
+    final blue = (channel(raw['blue']) * 255).round();
+    // Прозрачный/белый фон не считается заливкой статуса.
+    final alpha = raw['alpha'];
+    if (alpha is num && alpha < 0.05) return null;
+    if (red > 245 && green > 245 && blue > 245) return null;
+    return red << 16 | green << 8 | blue;
+  }
+
   @override
-  Future<void> batchUpdateValues(
+  Future<void> batchUpdate(
     String spreadsheetId,
-    List<SheetValueRange> data,
+    List<Map<String, Object?>> requests,
   ) async {
     await _send(
       'POST',
-      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}/values:batchUpdate',
-      body: {
-        'valueInputOption': 'RAW',
-        'data': [for (final item in data) item.toJson()],
-      },
-    );
-  }
-
-  @override
-  Future<void> appendValues(
-    String spreadsheetId,
-    String range,
-    List<List<Object?>> values,
-  ) async {
-    await _send(
-      'POST',
-      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
-          '/values/${Uri.encodeComponent(range)}:append',
-      query: {'valueInputOption': 'RAW', 'insertDataOption': 'INSERT_ROWS'},
-      body: {'range': range, 'majorDimension': 'ROWS', 'values': values},
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}:batchUpdate',
+      body: {'requests': requests},
     );
   }
 

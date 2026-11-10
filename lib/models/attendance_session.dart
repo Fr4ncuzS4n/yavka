@@ -110,6 +110,32 @@ class AttendanceSession {
     );
   }
 
+  /// Синхронизирует список группы с чужим списком (например из листа
+  /// месяца): новых добавляет, знакомых обновляет.
+  AttendanceSession withRoster(Iterable<Student> roster) {
+    var merged = [...students];
+    for (final student in roster) {
+      if (student.fullName.isEmpty) continue;
+      final index = merged.indexWhere(
+        (item) => item.id == student.id,
+      );
+      if (index < 0) {
+        merged.add(student);
+      } else if (merged[index].fullName != student.fullName) {
+        merged[index] = student;
+      }
+    }
+    if (merged.length == students.length &&
+        merged.every((student) => students.any(
+          (item) => item.id == student.id && item.fullName == student.fullName,
+        ))) {
+      return this;
+    }
+    return copyWith(
+      students: List<Student>.unmodifiable(merged),
+    );
+  }
+
   /// Объединяет удалённые отметки с локальными (удалённые важнее).
   ///
   /// Неизвестные студенты добавляются в список группы — так таблица может
