@@ -304,10 +304,15 @@ class GoogleSheetsApi implements SheetsApi {
     }
 
     final apiMessage = apiError?.message;
+    final violations = apiError?.violations ?? const [];
+    final detail = violations.isEmpty
+        ? null
+        : violations.map((violation) => violation).join('; ');
     throw GoogleApiException(
       apiMessage == null
           ? 'Google Таблицы вернули ошибку (HTTP ${response.statusCode}).'
-          : 'Google Таблицы: $apiMessage',
+          : 'Google Таблицы: $apiMessage'
+              '${detail == null ? '' : ' ($detail)'}',
       statusCode: response.statusCode,
     );
   }
@@ -384,17 +389,29 @@ class GoogleSheetsApi implements SheetsApi {
 /// Разобранное тело ошибки Google API.
 ///
 /// Формат: `{"error": {"code": 403, "message": "…", "status":
-/// "PERMISSION_DENIED", "errors": [{"reason": "rateLimitExceeded"}]}}`.
+/// "PERMISSION_DENIED", "errors": [{"reason": "rateLimitExceeded"}],
+/// "details": [{"@type": "google.rpc.BadRequest", "fieldViolations":
+/// [{"field": "requests[0].updateCells", "description": "…"}]}]}}`.
+///
+/// Поле `message` у Google часто безликое («Request contains an invalid
+/// argument.») — настоящая причина ошибки лежит в `details` как список
+/// нарушений по полям запроса. Без них невозможно понять, какой именно
+/// запрос отклонён.
 class ParsedGoogleError {
   const ParsedGoogleError({
     this.message,
     this.status,
     this.reasons = const [],
+    this.violations = const [],
   });
 
   final String? message;
   final String? status;
   final List<String> reasons;
+
+  /// Описания нарушений из `error.details[].fieldViolations[]`,
+  /// например «requests[3].updateDimensionProperties: No such dimension».
+  final List<String> violations;
 
   /// Reasons из `error.errors[].reason` (старый формат Google).
   static ParsedGoogleError? fromJsonBody(String body) {
@@ -420,10 +437,31 @@ class ParsedGoogleError {
       }
     }
 
+    final violations = <String>[];
+    final details = error['details'];
+    if (details is List) {
+      for (final detail in details) {
+        if (detail is! Map) continue;
+        final fieldViolations = detail['fieldViolations'];
+        if (fieldViolations is! List) continue;
+        for (final violation in fieldViolations) {
+          if (violation is! Map) continue;
+          final field = violation['field']?.toString() ?? '';
+          final description = violation['description']?.toString() ?? '';
+          final text = [
+            if (field.isNotEmpty) field,
+            if (description.isNotEmpty) description,
+          ].join(': ');
+          if (text.isNotEmpty) violations.add(text);
+        }
+      }
+    }
+
     return ParsedGoogleError(
       message: error['message']?.toString(),
       status: error['status']?.toString(),
       reasons: reasons,
+      violations: violations,
     );
   }
 }

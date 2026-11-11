@@ -133,6 +133,32 @@ void main() {
     expect(api.cell(title, 2, 121).value, '4');
   });
 
+  test('расширение листа и рисование шапки — разные пакеты', () async {
+    // Google может валидировать каждый batchUpdate против состояния до
+    // пакета: расширение и рисование в одном пакете рискованно. Расширение
+    // уходит отдельным вызовом, шапка — следующим.
+    final api = FakeSheetsApi();
+    final sync = service(api);
+
+    await sync.push(
+      spreadsheetId: 'sid',
+      month: month,
+      session: sessionWith({
+        '1': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 8),
+        ),
+      }),
+    );
+
+    // Первый batchUpdate расширяет сетку, второй рисует шапку, третий
+    // пишет саму отметку — расширение никогда не смешано с рисованием.
+    expect(api.batchUpdateCalls, 3);
+    // После обоих пакетов лист нужной ширины со шапкой.
+    expect(api.columnCountOf(title), 122);
+    expect(api.cell(title, 1, MonthGridCodec.firstDayColumn).value, '1');
+  });
+
   test('чужие отметки на листе не затираются, если локальных нет', () async {
     final api = FakeSheetsApi();
     seedJournal(

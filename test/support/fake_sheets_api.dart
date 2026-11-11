@@ -15,10 +15,14 @@ class FakeSheetsApi implements SheetsApi {
   bool failGet = false;
   bool failBatchUpdate = false;
 
+  /// Сколько раз вызван batchUpdate — тесты проверяют разделение пакетов.
+  int batchUpdateCalls = 0;
+
   void reset({String spreadsheetId = 'fake-spreadsheet'}) {
     _sheets.clear();
     _ids.clear();
     _nextSheetId = 0;
+    batchUpdateCalls = 0;
     _currentSpreadsheetId = spreadsheetId;
   }
 
@@ -163,6 +167,7 @@ class FakeSheetsApi implements SheetsApi {
     List<Map<String, Object?>> requests,
   ) async {
     if (failBatchUpdate) throw const GooglePermissionException();
+    batchUpdateCalls++;
     for (final request in requests) {
       final updateSheetProps = request['updateSheetProperties'];
       if (updateSheetProps is Map) {

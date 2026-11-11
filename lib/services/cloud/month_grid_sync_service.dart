@@ -500,13 +500,13 @@ class MonthGridSyncService {
       rows.add({'values': cells});
     }
 
-    final requests = <Map<String, Object?>>[
-      // Новый лист Google создаётся дефолтным 1000×26, а журналу ноября
-      // нужны 2 + 30·4 = 122 колонки. Google строго проверяет границы:
-      // запросы за пределами сетки отклоняются целиком (400 INVALID
-      // ARGUMENT), поэтому сначала расширяем лист. Уменьшать размеры
-      // нельзя — растим только когда реально не хватает.
-      if (columnCount < totalColumns)
+    // 1. Расширяем лист отдельным пакетом. Google создаёт лист месяца
+    //    дефолтным 1000×26, а журналу ноября нужны 2 + 30·4 = 122 колонки.
+    //    Уменьшать размеры нельзя — растим только когда не хватает.
+    //    Расширение идёт отдельным batchUpdate: не полагаемся на то,
+    //    как Google валидирует последующие запросы одного пакета.
+    if (columnCount < totalColumns) {
+      await _api.batchUpdate(spreadsheetId, [
         {
           'updateSheetProperties': {
             'properties': {
@@ -516,6 +516,11 @@ class MonthGridSyncService {
             'fields': 'gridProperties.columnCount',
           },
         },
+      ]);
+    }
+
+    // 2. Рисуем шапку: значения, ширины колонок и объединения дней.
+    final requests = <Map<String, Object?>>[
       _updateCells(
         sheetId: sheetId,
         rowIndex: 0,

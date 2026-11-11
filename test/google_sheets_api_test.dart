@@ -139,6 +139,69 @@ void main() {
     );
   });
 
+  test('400 показывает, какой именно запрос отклонён', () async {
+    // Настоящая форма ошибки Google: безликое «Request contains an
+    // invalid argument.» в message, а конкретная причина — в
+    // error.details[].fieldViolations. Без неё найти виновный запрос
+    // невозможно.
+    final api = apiWith(
+      MockClient(
+        (request) async => http.Response(
+          jsonEncode({
+            'error': {
+              'code': 400,
+              'message': 'Request contains an invalid argument.',
+              'status': 'INVALID_ARGUMENT',
+              'details': [
+                {
+                  '@type': 'type.googleapis.com/google.rpc.BadRequest',
+                  'fieldViolations': [
+                    {
+                      'field': 'requests[0].updateDimensionProperties',
+                      'description': 'This operation would shrink the grid.',
+                    },
+                    {
+                      'field': 'requests[1].mergeCells',
+                      'description': 'One of the cells is already merged.',
+                    },
+                  ],
+                },
+              ],
+            },
+          }),
+          400,
+        ),
+      ),
+    );
+
+    await expectLater(
+      api.batchUpdate('sid', const []),
+      throwsA(
+        isA<GoogleApiException>()
+            .having(
+              (error) => error.message,
+              'message',
+              contains('Request contains an invalid argument.'),
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains(
+                'requests[0].updateDimensionProperties: '
+                'This operation would shrink the grid.',
+              ),
+            )
+            .having(
+              (error) => error.message,
+              'message',
+              contains(
+                'requests[1].mergeCells: One of the cells is already merged.',
+              ),
+            ),
+      ),
+    );
+  });
+
   test('сетка листа читается из ответа Google', () async {
     final api = apiWith(
       MockClient((request) async {
