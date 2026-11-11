@@ -53,6 +53,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   String? _selectedStudentId;
   bool _absentArmed = false;
 
+  /// Множественный выбор: отметка ставится сразу нескольким студентам.
+  bool _multiSelect = false;
+  final Set<String> _selectedIds = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -79,7 +83,35 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return null;
   }
 
+  /// Студенты, к которым применится отметка (или её отмена).
+  List<Student> get _targets {
+    if (_multiSelect) {
+      return [
+        for (final student in _attendance.students)
+          if (_selectedIds.contains(student.id)) student,
+      ];
+    }
+    final single = _selectedStudent;
+    return single == null ? const <Student>[] : <Student>[single];
+  }
+
+  bool get _canMark =>
+      _multiSelect ? _selectedIds.isNotEmpty : _selectedStudent != null;
+
+  bool get _anyTargetMarked =>
+      _targets.any((student) => _attendance.entryFor(student.id) != null);
+
   void _select(Student student) {
+    if (_multiSelect) {
+      setState(() {
+        _absentArmed = false;
+        if (!_selectedIds.remove(student.id)) {
+          _selectedIds.add(student.id);
+        }
+        _selectedStudentId = student.id;
+      });
+      return;
+    }
     if (student.id == _selectedStudentId) return;
     setState(() {
       _selectedStudentId = student.id;
@@ -87,22 +119,60 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
   }
 
+  void _toggleMultiSelect() {
+    setState(() {
+      _absentArmed = false;
+      if (_multiSelect) {
+        // Выходим из режима: одиночным остаётся первый из выбранных.
+        _selectedStudentId =
+            _selectedIds.isNotEmpty ? _selectedIds.first : _selectedStudentId;
+        _selectedIds.clear();
+        _multiSelect = false;
+      } else {
+        _multiSelect = true;
+        _selectedIds.clear();
+        final single = _selectedStudentId;
+        if (single != null) _selectedIds.add(single);
+      }
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _absentArmed = false;
+      _selectedIds.addAll(_attendance.students.map((s) => s.id));
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _absentArmed = false;
+      _selectedIds.clear();
+    });
+  }
+
   void _mark(AttendanceStatus status) {
-    final student = _selectedStudent;
-    if (student == null) return;
-    _attendance.mark(student, status, DateTime.now());
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    final now = DateTime.now();
+    for (final student in targets) {
+      _attendance.mark(student, status, now);
+    }
     setState(() => _absentArmed = false);
   }
 
   Future<void> _markAbsent() async {
-    final student = _selectedStudent;
-    if (student == null || !mounted) return;
+    if (!_canMark || !mounted) return;
 
     // Первое нажатие — запоминаем намерение, второе — подтверждаем.
     if (!_absentArmed) {
       setState(() => _absentArmed = true);
       return;
     }
+
+    // Кого отмечаем — фиксируем до открытия диалога времени.
+    final targets = _targets;
+    if (targets.isEmpty) return;
 
     // Подтверждение отсутствия: выбираем время (по умолчанию — текущее).
     final now = DateTime.now();
@@ -114,11 +184,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (!mounted) return;
 
     final time = pickedTime ?? TimeOfDay.fromDateTime(now);
-    _attendance.mark(
-      student,
-      AttendanceStatus.absent,
-      DateTime(now.year, now.month, now.day, time.hour, time.minute),
-    );
+    for (final student in targets) {
+      _attendance.mark(
+        student,
+        AttendanceStatus.absent,
+        DateTime(now.year, now.month, now.day, time.hour, time.minute),
+      );
+    }
+    setState(() => _absentArmed = false);
+  }
+
+  /// Отмена отметки у всех выбранных студентов.
+  void _clearMarks() {
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    for (final student in targets) {
+      _attendance.clearMark(student);
+    }
     setState(() => _absentArmed = false);
   }
 
@@ -128,6 +210,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         title: _buildTitle(context),
         actions: [
+          IconButton(
+            tooltip: _multiSelect
+                ? 'Выйти из множественного выбора'
+                : 'Множественный выбор',
+            icon: Icon(
+              _multiSelect ? Icons.close : Icons.library_add_check_outlined,
+            ),
+            onPressed: _toggleMultiSelect,
+          ),
           if (widget.cloud != null) _buildCloudAction(context),
           if (widget.uiSettings != null)
             IconButton(
@@ -247,7 +338,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 key: ValueKey('student-${students[i].id}'),
                 student: students[i],
                 entry: _attendance.entryFor(students[i].id),
-                selected: _selectedStudentId == students[i].id,
+                selected: _multiSelect
+                    ? _selectedIds.contains(students[i].id)
+                    : _selectedStudentId == students[i].id,
+                multiSelect: _multiSelect,
                 onTap: () => _select(students[i]),
               ),
             ],
@@ -257,13 +351,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  /// Нижняя панель с 4 кнопками отметки.
+  /// Нижняя панель: цель отметки, отмена отметки и 4 кнопки.
   Widget _buildPanel() {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isLight = scheme.brightness == Brightness.light;
-    final selected = _selectedStudent;
-    final enabled = selected != null;
+    final canMark = _canMark;
+    final anyMarked = _anyTargetMarked;
+    final single = _multiSelect ? null : _selectedStudent;
+
+    final headerText = _multiSelect
+        ? (_selectedIds.isEmpty
+            ? 'Выберите студентов'
+            : 'Выбрано: ${_selectedIds.length}')
+        : (single == null
+            ? 'Выберите студента'
+            : 'Отметить: ${single.fullName}');
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -281,16 +384,47 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text(
-                enabled
-                    ? 'Отметить: ${selected.fullName}'
-                    : 'Выберите студента',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  color: enabled ? null : scheme.onSurfaceVariant,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      headerText,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: canMark ? null : scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (anyMarked)
+                    TextButton.icon(
+                      onPressed: _clearMarks,
+                      icon: const Icon(Icons.undo, size: 18),
+                      label: const Text('Отменить отметку'),
+                    ),
+                ],
               ),
+              if (_multiSelect) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: _selectAll,
+                        icon: const Icon(Icons.select_all, size: 18),
+                        label: const Text('Выбрать всех'),
+                      ),
+                    ),
+                    Expanded(
+                      child: TextButton.icon(
+                        onPressed: _selectedIds.isEmpty ? null : _clearSelection,
+                        icon: const Icon(Icons.close, size: 18),
+                        label: const Text('Снять выбор'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
               if (_absentArmed) ...[
                 const SizedBox(height: 8),
                 const _ArmedHint(),
@@ -301,7 +435,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   Expanded(
                     child: _StatusButton(
                       status: AttendanceStatus.came,
-                      enabled: enabled,
+                      enabled: canMark,
                       onTap: () => _mark(AttendanceStatus.came),
                     ),
                   ),
@@ -309,7 +443,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   Expanded(
                     child: _StatusButton(
                       status: AttendanceStatus.absent,
-                      enabled: enabled,
+                      enabled: canMark,
                       armed: _absentArmed,
                       onTap: _markAbsent,
                     ),
@@ -322,7 +456,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   Expanded(
                     child: _StatusButton(
                       status: AttendanceStatus.late,
-                      enabled: enabled,
+                      enabled: canMark,
                       onTap: () => _mark(AttendanceStatus.late),
                     ),
                   ),
@@ -330,7 +464,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   Expanded(
                     child: _StatusButton(
                       status: AttendanceStatus.excused,
-                      enabled: enabled,
+                      enabled: canMark,
                       onTap: () => _mark(AttendanceStatus.excused),
                     ),
                   ),
@@ -413,12 +547,21 @@ class _StudentRow extends StatelessWidget {
     required this.entry,
     required this.selected,
     required this.onTap,
+    this.multiSelect = false,
   });
 
   final Student student;
   final AttendanceEntry? entry;
   final bool selected;
+  final bool multiSelect;
   final VoidCallback onTap;
+
+  String? get _subtitle {
+    if (entry == null) return 'нет отметки';
+    final time = _formatTime(TimeOfDay.fromDateTime(entry!.markedAt));
+    if (multiSelect) return '${entry!.status.label} · $time';
+    return time;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -430,6 +573,7 @@ class _StudentRow extends StatelessWidget {
     final marked = status != null;
     final fg = marked ? status.foreground(scheme.brightness) : null;
     final container = marked ? status.container(scheme.brightness) : null;
+    final subtitle = _subtitle;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -483,11 +627,7 @@ class _StudentRow extends StatelessWidget {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        marked && entry != null
-                            ? _formatTime(
-                                TimeOfDay.fromDateTime(entry!.markedAt),
-                              )
-                            : 'нет отметки',
+                        marked ? subtitle! : 'нет отметки',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: marked ? fg : scheme.onSurfaceVariant,
                         ),
@@ -495,7 +635,13 @@ class _StudentRow extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (marked) ...[
+                if (multiSelect)
+                  Checkbox(
+                    value: selected,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    onChanged: (_) => onTap(),
+                  )
+                else if (marked) ...[
                   const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(

@@ -72,6 +72,15 @@ class AttendanceController extends ChangeNotifier {
     _persist();
   }
 
+  /// Снимает отметку студента (кнопка «Отменить отметку»).
+  void clearMark(Student student) {
+    final entries = {..._session.entries};
+    if (entries.remove(student.id) == null) return;
+    _session = _session.copyWith(entries: entries);
+    notifyListeners();
+    _persist();
+  }
+
   /// Заменяет локальные отметки удалёнными (используется после загрузки
   /// из Google Таблицы).
   void mergeRemote(Iterable<AttendanceRecord> records) {
