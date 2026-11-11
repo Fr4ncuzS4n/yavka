@@ -209,6 +209,13 @@ void main() {
           request.url.toString(),
           contains('includeGridData=true'),
         );
+        // Маска полей — строго по схеме API, иначе Google отвечает
+        // 400 «Cannot find matching fields for path …».
+        final fields = request.url.queryParameters['fields'] ?? '';
+        expect(fields, contains('gridProperties(rowCount,columnCount)'));
+        expect(fields, contains('backgroundColorStyle.rgbColor'));
+        expect(fields, isNot(contains('.rgb,')));
+        expect(fields, isNot(contains('data.gridProperties')));
         return http.Response(
           jsonEncode({
             'sheets': [
@@ -216,12 +223,13 @@ void main() {
                 'properties': {
                   'sheetId': 7,
                   'title': 'Ноябрь 2026',
+                  // Размер сетки — в properties.gridProperties.
+                  'gridProperties': {'rowCount': 4, 'columnCount': 6},
                 },
                 'data': [
                   {
                     'startRow': 0,
                     'startColumn': 0,
-                    'gridProperties': {'rowCount': 4, 'columnCount': 6},
                     'rowData': [
                       {'values': []},
                       {
@@ -233,7 +241,11 @@ void main() {
                             'formattedValue': '',
                             'effectiveFormat': {
                               'backgroundColorStyle': {
-                                'rgb': {'red': 0.6, 'green': 0.1, 'blue': 0.1},
+                                'rgbColor': {
+                                  'red': 0.6,
+                                  'green': 0.1,
+                                  'blue': 0.1,
+                                },
                               },
                             },
                           },
@@ -376,19 +388,24 @@ void main() {
           jsonEncode({
             'sheets': [
               {
-                'properties': {'sheetId': 1, 'title': 'Ноябрь 2026'},
+                'properties': {
+                  'sheetId': 1,
+                  'title': 'Ноябрь 2026',
+                  'gridProperties': {'rowCount': 1, 'columnCount': 3},
+                },
                 'data': [
                   {
-                    'gridProperties': {'rowCount': 1, 'columnCount': 3},
                     'rowData': [
                       {
                         'values': [
                           {
                             'effectiveFormat': {
-                              'backgroundColor': {
-                                'red': 1,
-                                'green': 1,
-                                'blue': 1,
+                              'backgroundColorStyle': {
+                                'rgbColor': {
+                                  'red': 1,
+                                  'green': 1,
+                                  'blue': 1,
+                                },
                               },
                             },
                           },

@@ -95,13 +95,17 @@ class GoogleSheetsApi implements SheetsApi {
         'includeGridData': 'true',
         // Ячейки читаем по диапазону всего листа — заливки и значения.
         'ranges': "'$sheetTitle'",
+        // Маска строго по схеме API: gridProperties живёт в
+        // sheets.properties (в GridData его нет), а ColorStyle хранит
+        // цвет в rgbColor. Несуществующий путь — и весь запрос падает
+        // с 400 «Cannot find matching fields for path …».
         'fields':
-            'sheets.properties(title,sheetId),'
-            'sheets.data.gridProperties(rowCount,columnCount),'
+            'sheets.properties(title,sheetId,'
+            'gridProperties(rowCount,columnCount)),'
             'sheets.data.startRow,sheets.data.startColumn,'
             'sheets.data.rowData.values(formattedValue,'
-            'effectiveFormat.backgroundColorStyle.rgb,'
-            'effectiveFormat.backgroundColor.rgb),'
+            'effectiveFormat.backgroundColorStyle.rgbColor,'
+            'effectiveFormat.backgroundColor),'
             'sheets.merges',
       },
     );
@@ -126,13 +130,18 @@ class GoogleSheetsApi implements SheetsApi {
       gridData = Map<String, dynamic>.from(data.first as Map);
     }
 
-    final gridProperties = gridData['gridProperties'];
-    final rowCount = gridProperties is Map
-        ? int.tryParse(gridProperties['rowCount']?.toString() ?? '') ?? 0
-        : 0;
-    final columnCount = gridProperties is Map
-        ? int.tryParse(gridProperties['columnCount']?.toString() ?? '') ?? 0
-        : 0;
+    // Размер сетки живёт в properties.gridProperties (GridData его
+    // не содержит); запасной вариант — на случай старых ответов.
+    final rawGridProperties = properties['gridProperties'] is Map
+        ? properties['gridProperties']
+        : gridData['gridProperties'];
+    final gridProperties = rawGridProperties is Map
+        ? Map<String, dynamic>.from(rawGridProperties)
+        : const <String, dynamic>{};
+    final rowCount =
+        int.tryParse(gridProperties['rowCount']?.toString() ?? '') ?? 0;
+    final columnCount =
+        int.tryParse(gridProperties['columnCount']?.toString() ?? '') ?? 0;
 
     final startRow =
         int.tryParse(gridData['startRow']?.toString() ?? '') ?? 0;
@@ -207,8 +216,10 @@ class GoogleSheetsApi implements SheetsApi {
   /// Цвет Google: `{red, green, blue}` — числа от 0 до 1.
   int? _colorFromJson(Map format) {
     final style = format['backgroundColorStyle'];
-    final raw = style is Map && style['rgb'] is Map
-        ? style['rgb']
+    // ColorStyle хранит цвет в rgbColor (Color); deprecated-поле
+    // backgroundColor — тот же объект Color.
+    final raw = style is Map && style['rgbColor'] is Map
+        ? style['rgbColor']
         : format['backgroundColor'];
     if (raw is! Map) return null;
 
