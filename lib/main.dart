@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/attendance_controller.dart';
 import 'data/attendance_store.dart';
+import 'data/catalog_controller.dart';
+import 'data/catalog_store.dart';
 import 'data/cloud_settings.dart';
 import 'data/notification_controller.dart';
 import 'data/notification_store.dart';
@@ -26,6 +28,7 @@ Future<void> main() async {
 
   var attendance = AttendanceController.inMemory();
   var schedule = ScheduleController.inMemory();
+  var catalog = CatalogController.inMemory();
   var notifications = NotificationController();
   CloudSyncController? cloud;
   UiSettingsController? settings;
@@ -42,6 +45,11 @@ Future<void> main() async {
       store: SharedPreferencesScheduleStore(preferences),
     );
     await schedule.load();
+
+    catalog = CatalogController(
+      store: SharedPreferencesCatalogStore(preferences),
+    );
+    await catalog.load();
 
     notifications = NotificationController(
       store: SharedPreferencesNotificationStore(preferences),
@@ -73,6 +81,7 @@ Future<void> main() async {
     AppRoot(
       attendance: attendance,
       schedule: schedule,
+      catalog: catalog,
       notifications: notifications,
       cloud: cloud,
       settings: settings,
@@ -89,6 +98,7 @@ class AppRoot extends StatelessWidget {
     super.key,
     this.attendance,
     this.schedule,
+    this.catalog,
     this.notifications,
     this.cloud,
     this.settings,
@@ -96,6 +106,9 @@ class AppRoot extends StatelessWidget {
 
   final AttendanceController? attendance;
   final ScheduleController? schedule;
+
+  /// Локальная база: преподаватели, предметы, кабинеты.
+  final CatalogController? catalog;
   final NotificationController? notifications;
   final CloudSyncController? cloud;
   final UiSettingsController? settings;
@@ -112,6 +125,7 @@ class AppRoot extends StatelessWidget {
         home: HomeShell(
           attendance: attendance,
           schedule: schedule,
+          catalog: catalog,
           notifications: notifications,
           cloud: cloud,
         ),
@@ -131,6 +145,7 @@ class AppRoot extends StatelessWidget {
           home: HomeShell(
             attendance: attendance,
             schedule: schedule,
+            catalog: catalog,
             notifications: notifications,
             cloud: cloud,
             uiSettings: controller,

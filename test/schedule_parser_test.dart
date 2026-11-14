@@ -86,6 +86,18 @@ void main() {
     expect(parsed2.lessons.single.subject, 'Физика');
   });
 
+  test('преподаватель после запятой выносится отдельно', () {
+    final parsed = ScheduleParser.parse(
+      '09:00–10:30 Химия, каб. 5, Сидорова А.А.',
+      fallbackWeekday: 1,
+    );
+
+    final lesson = parsed.lessons.single;
+    expect(lesson.subject, 'Химия');
+    expect(lesson.room, '5');
+    expect(lesson.teacher, 'Сидорова А.А.');
+  });
+
   test('строки без времени и мусор пропускаются', () {
     final parsed = ScheduleParser.parse(
       'Расписание на неделю\nКонсультации\n09:00 Математика',

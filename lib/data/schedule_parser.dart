@@ -168,6 +168,19 @@ abstract final class ScheduleParser {
       }
     }
 
+    // Преподаватель — последняя часть после запятой, если она похожа
+    // на ФИО: «Физика, ауд. 12, Иванова И.И.».
+    if (teacher == null) {
+      final parts = rest.split(',');
+      if (parts.length >= 2) {
+        final candidate = _cleanSubject(parts.last);
+        if (_looksLikeName(candidate)) {
+          teacher = candidate;
+          rest = parts.sublist(0, parts.length - 1).join(',');
+        }
+      }
+    }
+
     final subject = _cleanSubject(rest);
     if (subject.isEmpty) return null;
 

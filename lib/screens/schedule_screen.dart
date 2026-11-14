@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
+import '../data/catalog_controller.dart';
 import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/schedule_parser.dart';
 import '../models/attendance_session.dart';
+import '../models/catalog.dart';
 import '../models/schedule_lesson.dart';
 import '../theme/app_theme.dart';
 import 'attendance_screen.dart';
+import 'catalog_screen.dart';
 import 'notifications_screen.dart';
 
 /// Вкладка «Расписание»: пары по дням недели.
 ///
 /// Расписание можно вставить документом (текст разберётся в пары) или
-/// составить самому, добавляя пары списком. С каждой сегодняшней пары
+/// составить самому, добавляя пары списком. Предмет, преподаватель и
+/// кабинет выбираются селектами из локальной базы (см. [catalog]); из
+/// диалога пары в неё можно добавить новое. С каждой сегодняшней пары
 /// можно сразу отметить посещаемость группы.
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({
@@ -21,11 +26,16 @@ class ScheduleScreen extends StatefulWidget {
     required this.schedule,
     this.attendance,
     this.notifications,
+    this.catalog,
   });
 
   final ScheduleController schedule;
   final AttendanceController? attendance;
   final NotificationController? notifications;
+
+  /// Локальная база: преподаватели, предметы, кабинеты. Без неё диалог
+  /// пары остаётся с селектами, но пополнять базу из него нельзя.
+  final CatalogController? catalog;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -77,6 +87,12 @@ class _ScheduleScreenState extends State<ScheduleScreen>
         actions: [
           if (widget.notifications != null)
             NotificationBell(notifications: widget.notifications!),
+          if (widget.catalog != null)
+            IconButton(
+              tooltip: 'База данных: преподаватели, предметы, кабинеты',
+              onPressed: () => _openCatalog(context),
+              icon: const Icon(Icons.storage_rounded),
+            ),
           IconButton(
             tooltip: 'Вставить документ с расписанием',
             onPressed: () => _pasteDocument(context),
@@ -129,6 +145,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       schedule: widget.schedule,
                       attendance: widget.attendance,
                       notifications: widget.notifications,
+                      catalog: widget.catalog,
                       onPaste: () => _pasteDocument(context, weekday: weekday),
                       onAdd: () => _editLesson(context, weekday: weekday),
                     ),
@@ -139,6 +156,16 @@ class _ScheduleScreenState extends State<ScheduleScreen>
         ),
       ),
     );
+  }
+
+  /// Экран локальной базы: преподаватели, предметы, кабинеты.
+  Future<void> _openCatalog(BuildContext context) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => CatalogScreen(catalog: widget.catalog!),
+      ),
+    );
+    if (mounted) setState(() {}); // селекты в диалогах обновились
   }
 
   /// Вставить документ с расписанием.
@@ -168,12 +195,27 @@ class _ScheduleScreenState extends State<ScheduleScreen>
       return;
     }
 
+    // Предметы, преподаватели и кабинеты из документа пополняют базу —
+    // дальше их можно выбирать селектами в диалоге пары.
+    var catalogNote = '';
+    final catalog = widget.catalog;
+    if (catalog != null) {
+      final added = catalog.syncFromLessons(parsed.lessons);
+      final total = added.teachers + added.rooms + added.subjects;
+      if (total > 0) {
+        catalogNote =
+            ' В базу добавлено: предметов — ${added.subjects}, '
+            'преподавателей — ${added.teachers}, кабинетов — ${added.rooms}.';
+      }
+    }
+
     schedule.replaceWeekdays(parsed.lessons, weekdays: parsed.weekdays);
     messenger.showSnackBar(
       SnackBar(
         content: Text(
           'Добавлено пар: ${parsed.lessons.length}'
-          '${result.replace ? ' (дни из документа заменены)' : ''}',
+          '${result.replace ? ' (дни из документа заменены)' : ''}'
+          '$catalogNote',
         ),
       ),
     );
@@ -188,7 +230,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     final schedule = widget.schedule;
     final lesson = await showDialog<ScheduleLesson>(
       context: context,
-      builder: (_) => _LessonDialog(weekday: weekday, existing: existing),
+      builder: (_) =>
+          _LessonDialog(catalog: widget.catalog, weekday: weekday, existing: existing),
     );
     if (lesson == null || !mounted) return;
     if (existing == null) {
@@ -262,6 +305,8 @@ class _PasteDialogState extends State<_PasteDialog> {
               controller: _controller,
               maxLines: 8,
               autofocus: true,
+              // Без этого кнопка «Вставить» не узнает, что текст введён.
+              onChanged: (_) => setState(() {}),
               decoration: const InputDecoration(
                 hintText:
                     'Понедельник\n09:00–10:30 Математика, каб. 201\n'
@@ -321,10 +366,16 @@ class _PasteDialogState extends State<_PasteDialog> {
 }
 
 /// Диалог создания и изменения пары.
+///
+/// Предмет, преподаватель и кабинет выбираются селектами из локальной
+/// базы; кнопкой «+» рядом с селектом можно сразу добавить новую
+/// запись в базу. У выбранного предмета преподаватель и кабинет
+/// подставляются из базы — при желании их можно поменять в самой паре.
 class _LessonDialog extends StatefulWidget {
-  const _LessonDialog({required this.weekday, this.existing});
+  const _LessonDialog({required this.weekday, this.catalog, this.existing});
 
   final int weekday;
+  final CatalogController? catalog;
   final ScheduleLesson? existing;
 
   @override
@@ -332,9 +383,15 @@ class _LessonDialog extends StatefulWidget {
 }
 
 class _LessonDialogState extends State<_LessonDialog> {
-  late final TextEditingController _subject;
-  late final TextEditingController _teacher;
-  late final TextEditingController _room;
+  /// Выбранное название предмета (null — не выбрано).
+  String? _subjectName;
+
+  /// Выбранный преподаватель (null — «Не указан»).
+  String? _teacherName;
+
+  /// Выбранный кабинет (null — «Не указан»).
+  String? _roomName;
+
   late int _weekday;
   int? _start;
   int? _end;
@@ -343,21 +400,22 @@ class _LessonDialogState extends State<_LessonDialog> {
   @override
   void initState() {
     super.initState();
-    _subject = TextEditingController(text: widget.existing?.subject ?? '');
-    _teacher = TextEditingController(text: widget.existing?.teacher ?? '');
-    _room = TextEditingController(text: widget.existing?.room ?? '');
+    // Старые пары хранят преподавателя и кабинет строками — их названия
+    // остаются в селектах, даже если в базе такой записи ещё нет.
+    _subjectName = _trimOrNull(widget.existing?.subject);
+    _teacherName = _trimOrNull(widget.existing?.teacher);
+    _roomName = _trimOrNull(widget.existing?.room);
     _weekday = widget.existing?.weekday ?? widget.weekday;
     _start = widget.existing?.startMinutes;
     _end = widget.existing?.endMinutes;
   }
 
-  @override
-  void dispose() {
-    _subject.dispose();
-    _teacher.dispose();
-    _room.dispose();
-    super.dispose();
+  static String? _trimOrNull(String? value) {
+    final text = value?.trim() ?? '';
+    return text.isEmpty ? null : text;
   }
+
+  CatalogController? get _catalog => widget.catalog;
 
   TimeOfDay _toTime(int? minutes) => minutes == null
       ? const TimeOfDay(hour: 9, minute: 0)
@@ -392,8 +450,132 @@ class _LessonDialogState extends State<_LessonDialog> {
     });
   }
 
+  /// Выбор предмета: преподаватель и кабинет подставляются из базы.
+  void _onSubjectChanged(String? name) {
+    final catalog = _catalog;
+    setState(() {
+      _subjectName = name;
+      final subject = name == null || catalog == null
+          ? null
+          : catalog.subjectByName(name);
+      _teacherName = subject == null
+          ? null
+          : catalog?.teacherById(subject.teacherId)?.name;
+      _roomName = subject == null
+          ? null
+          : catalog?.roomById(subject.roomId)?.name;
+    });
+  }
+
+  // --- Пополнение базы прямо из диалога ---
+
+  Future<void> _addSubjectToCatalog() async {
+    final catalog = _catalog;
+    if (catalog == null) return;
+    final subject = await showDialog<Subject>(
+      context: context,
+      builder: (_) => SubjectEditDialog(catalog: catalog),
+    );
+    if (subject == null || !mounted) return;
+    setState(() {
+      _subjectName = subject.name;
+      _teacherName = catalog.teacherById(subject.teacherId)?.name;
+      _roomName = catalog.roomById(subject.roomId)?.name;
+    });
+  }
+
+  Future<void> _addTeacherToCatalog() async {
+    final catalog = _catalog;
+    if (catalog == null) return;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => const CatalogNameDialog(
+        title: 'Новый преподаватель',
+        actionLabel: 'Добавить',
+      ),
+    );
+    if (name == null) return;
+    final teacher = catalog.addTeacher(name);
+    setState(() => _teacherName = teacher.name);
+  }
+
+  Future<void> _addRoomToCatalog() async {
+    final catalog = _catalog;
+    if (catalog == null) return;
+    final name = await showDialog<String>(
+      context: context,
+      builder: (_) => const CatalogNameDialog(
+        title: 'Новый кабинет',
+        actionLabel: 'Добавить',
+      ),
+    );
+    if (name == null) return;
+    final room = catalog.addRoom(name);
+    setState(() => _roomName = room.name);
+  }
+
+  // --- Пункты селектов ---
+
+  /// Предметы из базы; название старой пары остаётся пунктом, даже если
+  /// предмет ещё не завели в базу.
+  List<DropdownMenuItem<String>> get _subjectItems {
+    final names = [
+      for (final subject in _catalog?.subjects ?? const <Subject>[])
+        subject.name,
+    ];
+    final selected = _subjectName;
+    if (selected != null && !_hasName(names, selected)) {
+      names.insert(0, selected);
+    }
+    return [
+      for (final name in names)
+        DropdownMenuItem<String>(value: name, child: Text(name)),
+    ];
+  }
+
+  /// Преподаватели из базы плюс «Не указан».
+  List<DropdownMenuItem<String?>> get _teacherItems {
+    final names = [
+      for (final teacher in _catalog?.teachers ?? const <Teacher>[])
+        teacher.name,
+    ];
+    final selected = _teacherName;
+    if (selected != null && !_hasName(names, selected)) {
+      names.insert(0, selected);
+    }
+    return [
+      const DropdownMenuItem<String?>(value: null, child: Text('Не указан')),
+      for (final name in names)
+        DropdownMenuItem<String?>(value: name, child: Text(name)),
+    ];
+  }
+
+  /// Кабинеты из базы плюс «Не указан».
+  List<DropdownMenuItem<String?>> get _roomItems {
+    final names = [
+      for (final room in _catalog?.rooms ?? const <Room>[]) room.name,
+    ];
+    final selected = _roomName;
+    if (selected != null && !_hasName(names, selected)) {
+      names.insert(0, selected);
+    }
+    return [
+      const DropdownMenuItem<String?>(value: null, child: Text('Не указан')),
+      for (final name in names)
+        DropdownMenuItem<String?>(value: name, child: Text(name)),
+    ];
+  }
+
+  static bool _hasName(List<String> names, String name) {
+    final key = normalizeCatalogName(name);
+    for (final candidate in names) {
+      if (normalizeCatalogName(candidate) == key) return true;
+    }
+    return false;
+  }
+
   void _save() {
-    if (_subject.text.trim().isEmpty) {
+    if (_subjectName == null || _subjectName!.trim().isEmpty) {
       setState(() => _error = 'Укажите название предмета.');
       return;
     }
@@ -408,9 +590,9 @@ class _LessonDialogState extends State<_LessonDialog> {
           weekday: _weekday,
           startMinutes: _start!,
           endMinutes: _end,
-          subject: _subject.text.trim(),
-          teacher: _teacher.text.trim().isEmpty ? null : _teacher.text.trim(),
-          room: _room.text.trim().isEmpty ? null : _room.text.trim(),
+          subject: _subjectName!,
+          teacher: _teacherName,
+          room: _roomName,
         ),
       );
       return;
@@ -421,17 +603,30 @@ class _LessonDialogState extends State<_LessonDialog> {
         startMinutes: _start,
         endMinutes: _end,
         clearEnd: _end == null,
-        subject: _subject.text.trim(),
-        teacher: _teacher.text.trim(),
-        clearTeacher: _teacher.text.trim().isEmpty,
-        room: _room.text.trim(),
-        clearRoom: _room.text.trim().isEmpty,
+        subject: _subjectName!,
+        teacher: _teacherName ?? '',
+        clearTeacher: _teacherName == null,
+        room: _roomName ?? '',
+        clearRoom: _roomName == null,
       ),
     );
   }
 
+  InputDecoration _withSuffix(
+    InputDecoration decoration, {
+    required String tooltip,
+    required VoidCallback onPressed,
+  }) => decoration.copyWith(
+    suffixIcon: IconButton(
+      tooltip: tooltip,
+      onPressed: onPressed,
+      icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final catalog = _catalog;
     final startLabel = _start == null ? 'Начало' : formatMinutes(_start!);
     final endLabel = _end == null
         ? 'Конец (необязательно)'
@@ -445,17 +640,32 @@ class _LessonDialogState extends State<_LessonDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            TextField(
-              controller: _subject,
+            DropdownButtonFormField<String>(
+              initialValue: _subjectName,
               autofocus: true,
-              decoration: const InputDecoration(
+              isExpanded: true,
+              hint: const Text('Выберите предмет'),
+              decoration: InputDecoration(
                 labelText: 'Предмет',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                suffixIcon: catalog == null
+                    ? null
+                    : IconButton(
+                        tooltip: 'Добавить предмет в базу',
+                        onPressed: _addSubjectToCatalog,
+                        icon: const Icon(
+                          Icons.add_circle_outline_rounded,
+                          size: 22,
+                        ),
+                      ),
               ),
+              items: _subjectItems,
+              onChanged: _onSubjectChanged,
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<int>(
               initialValue: _weekday,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'День недели',
                 border: OutlineInputBorder(),
@@ -489,20 +699,44 @@ class _LessonDialogState extends State<_LessonDialog> {
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _teacher,
-              decoration: const InputDecoration(
-                labelText: 'Преподаватель (необязательно)',
-                border: OutlineInputBorder(),
-              ),
+            DropdownButtonFormField<String?>(
+              initialValue: _teacherName,
+              isExpanded: true,
+              decoration: catalog == null
+                  ? const InputDecoration(
+                      labelText: 'Преподаватель (необязательно)',
+                      border: OutlineInputBorder(),
+                    )
+                  : _withSuffix(
+                      const InputDecoration(
+                        labelText: 'Преподаватель (необязательно)',
+                        border: OutlineInputBorder(),
+                      ),
+                      tooltip: 'Добавить преподавателя в базу',
+                      onPressed: _addTeacherToCatalog,
+                    ),
+              items: _teacherItems,
+              onChanged: (value) => setState(() => _teacherName = value),
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: _room,
-              decoration: const InputDecoration(
-                labelText: 'Кабинет (необязательно)',
-                border: OutlineInputBorder(),
-              ),
+            DropdownButtonFormField<String?>(
+              initialValue: _roomName,
+              isExpanded: true,
+              decoration: catalog == null
+                  ? const InputDecoration(
+                      labelText: 'Кабинет (необязательно)',
+                      border: OutlineInputBorder(),
+                    )
+                  : _withSuffix(
+                      const InputDecoration(
+                        labelText: 'Кабинет (необязательно)',
+                        border: OutlineInputBorder(),
+                      ),
+                      tooltip: 'Добавить кабинет в базу',
+                      onPressed: _addRoomToCatalog,
+                    ),
+              items: _roomItems,
+              onChanged: (value) => setState(() => _roomName = value),
             ),
             if (_error != null) ...[
               const SizedBox(height: 8),
@@ -538,6 +772,7 @@ class _DayPage extends StatelessWidget {
     required this.notifications,
     required this.onPaste,
     required this.onAdd,
+    this.catalog,
   });
 
   final int weekday;
@@ -551,6 +786,7 @@ class _DayPage extends StatelessWidget {
   final NotificationController? notifications;
   final VoidCallback onPaste;
   final VoidCallback onAdd;
+  final CatalogController? catalog;
 
   @override
   Widget build(BuildContext context) {
@@ -575,6 +811,7 @@ class _DayPage extends StatelessWidget {
                 isToday: isToday,
                 canMark: canMarkToday,
                 schedule: schedule,
+                catalog: catalog,
                 attendance: attendance,
                 notifications: notifications,
                 onTap: canMarkToday
@@ -693,6 +930,7 @@ class _LessonCard extends StatelessWidget {
     required this.attendance,
     required this.notifications,
     required this.onTap,
+    this.catalog,
   });
 
   final ScheduleLesson lesson;
@@ -701,6 +939,9 @@ class _LessonCard extends StatelessWidget {
   /// Показывать кнопку «Отметить»: только сегодня и только в будни.
   final bool canMark;
   final ScheduleController schedule;
+
+  /// База для диалога изменения пары из меню карточки.
+  final CatalogController? catalog;
   final AttendanceController? attendance;
   final NotificationController? notifications;
   final VoidCallback? onTap;
@@ -793,7 +1034,7 @@ class _LessonCard extends StatelessWidget {
                     notifications: notifications,
                   ),
                 ],
-                _LessonMenu(lesson: lesson, schedule: schedule),
+                _LessonMenu(lesson: lesson, schedule: schedule, catalog: catalog),
               ],
             ),
           ),
@@ -863,10 +1104,15 @@ class _MarkChip extends StatelessWidget {
 
 /// Меню пары: изменить, удалить.
 class _LessonMenu extends StatelessWidget {
-  const _LessonMenu({required this.lesson, required this.schedule});
+  const _LessonMenu({
+    required this.lesson,
+    required this.schedule,
+    this.catalog,
+  });
 
   final ScheduleLesson lesson;
   final ScheduleController schedule;
+  final CatalogController? catalog;
 
   @override
   Widget build(BuildContext context) {
@@ -905,8 +1151,11 @@ class _LessonMenu extends StatelessWidget {
         } else if (action == 'edit') {
           final updated = await showDialog<ScheduleLesson>(
             context: context,
-            builder: (_) =>
-                _LessonDialog(weekday: lesson.weekday, existing: lesson),
+            builder: (_) => _LessonDialog(
+              catalog: catalog,
+              weekday: lesson.weekday,
+              existing: lesson,
+            ),
           );
           if (updated == null || !context.mounted) return;
           schedule.update(updated);

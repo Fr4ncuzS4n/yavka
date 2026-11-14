@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
+import '../data/catalog_controller.dart';
 import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/ui_settings.dart';
@@ -17,6 +18,7 @@ class HomeShell extends StatefulWidget {
     this.schedule,
     this.notifications,
     this.uiSettings,
+    this.catalog,
   });
 
   final AttendanceController? attendance;
@@ -26,6 +28,9 @@ class HomeShell extends StatefulWidget {
 
   /// Выборный дизайн («Настройки → Дизайн»).
   final UiSettingsController? uiSettings;
+
+  /// Локальная база: преподаватели, предметы, кабинеты.
+  final CatalogController? catalog;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -46,6 +51,7 @@ class _HomeShellState extends State<HomeShell> {
     super.initState();
     _schedule.load();
     _notifications.load();
+    widget.catalog?.load();
   }
 
   @override
@@ -66,6 +72,7 @@ class _HomeShellState extends State<HomeShell> {
             schedule: _schedule,
             attendance: _attendance,
             notifications: _notifications,
+            catalog: widget.catalog,
           ),
         ],
       ),
