@@ -7,7 +7,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'data/attendance_controller.dart';
 import 'data/attendance_store.dart';
 import 'data/cloud_settings.dart';
-import 'data/example_group.dart';
 import 'data/notification_controller.dart';
 import 'data/notification_store.dart';
 import 'data/schedule_controller.dart';
@@ -34,10 +33,7 @@ Future<void> main() async {
   try {
     final preferences = await SharedPreferences.getInstance();
     attendance = AttendanceController(
-      session: AttendanceSession.forToday(
-        groupName: exampleGroupName,
-        students: exampleStudents,
-      ),
+      session: AttendanceSession.forToday(groupName: '', students: const []),
       store: SharedPreferencesAttendanceStore(preferences),
     );
     await attendance.load();

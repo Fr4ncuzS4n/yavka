@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:yavka/data/attendance_controller.dart';
-import 'package:yavka/data/example_group.dart';
+import 'support/demo_roster.dart';
 import 'package:yavka/main.dart';
 import 'package:yavka/models/attendance_session.dart';
 import 'package:yavka/screens/attendance_screen.dart';
@@ -21,8 +21,8 @@ Future<void> _pumpApp(WidgetTester tester) async {
     AppRoot(
       attendance: AttendanceController(
         session: AttendanceSession(
-          groupName: exampleGroupName,
-          students: exampleStudents,
+          groupName: demoGroupName,
+          students: demoStudents,
           date: kMonday,
         ),
       ),

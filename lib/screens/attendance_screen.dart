@@ -728,13 +728,29 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         Text(
           lesson == null
               ? _formatDate(_day)
-              : 'Группа ${_attendance.session.groupName} · '
-                    '${lesson.timeLabel} · ${_formatDate(_day)}',
+              : _lessonSubtitle(lesson),
           style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: scheme.onSurfaceVariant),
         ),
       ],
     );
+  }
+
+  /// Подзаголовок шапки для пары: группа указывается, только если она
+  /// известна (до настройки журнала имени группы нет).
+  String _lessonSubtitle(ScheduleLesson lesson) {
+    final group = _attendance.session.groupName;
+    return [
+      if (group.isNotEmpty) 'Группа $group',
+      lesson.timeLabel,
+      _formatDate(_day),
+    ].join(' · ');
+  }
+
+  /// Название блока списка: «Список группы», пока имени группы нет.
+  String get _groupTitle {
+    final group = _attendance.session.groupName;
+    return group.isEmpty ? 'Список группы' : 'Группа $group';
   }
 
   Widget _buildList() {
@@ -748,17 +764,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             _GroupHeader(
-              title: lesson == null
-                  ? 'Группа ${_attendance.session.groupName}'
-                  : 'Пара «${lesson.subject}»',
+              title: lesson == null ? _groupTitle : 'Пара «${lesson.subject}»',
               subtitle: lesson == null
                   ? null
-                  : 'Группа ${_attendance.session.groupName} · '
-                        '${lesson.timeLabel}',
+                  : _lessonSubtitle(lesson),
               marked: _markedCount,
               total: students.length,
             ),
             const SizedBox(height: 16),
+            if (students.isEmpty)
+              Text(
+                'Список группы пуст. Подключите Google Таблицу с журналом '
+                'и загрузите список — ФИО возьмутся из колонки журнала.',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
             for (var i = 0; i < students.length; i++) ...[
               if (i > 0) const SizedBox(height: 8),
               _StudentRow(

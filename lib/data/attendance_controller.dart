@@ -9,7 +9,6 @@ import '../models/attendance_session.dart';
 import '../models/attendance_status.dart';
 import '../models/student.dart';
 import 'attendance_store.dart';
-import 'example_group.dart';
 
 /// Состояние посещаемости и операции над ним.
 ///
@@ -26,12 +25,12 @@ class AttendanceController extends ChangeNotifier {
        _selectedDate = dateOnly(session.date),
        _store = store;
 
-  /// Сессия с примером группы — удобна для тестов и первого запуска.
+  /// Пустой контроллер без списка группы — для тестов и первого запуска.
+  ///
+  /// Настоящий список группы приложение берёт из журнала Google Таблицы
+  /// (колонка ФИО) при первой загрузке.
   factory AttendanceController.inMemory() => AttendanceController(
-    session: AttendanceSession.forToday(
-      groupName: exampleGroupName,
-      students: exampleStudents,
-    ),
+    session: AttendanceSession.forToday(groupName: '', students: const []),
   );
 
   final AttendanceStore? _store;

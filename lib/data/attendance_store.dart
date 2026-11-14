@@ -36,17 +36,43 @@ class SharedPreferencesAttendanceStore implements AttendanceStore {
   /// Старый формат: одна сессия «сегодня». Читается при миграции.
   static const _legacyKey = 'yavka.attendance.session.v1';
 
+  /// Демонстрационная группа из ранних версий приложения: идентификатор
+  /// → ФИО.
+  ///
+  /// Раньше они заливались при каждом запуске и сохранялись в
+  /// хранилище. При чтении такие студенты вычищаются вместе с их
+  /// отметками, а хранилище переписывается без них.
+  static const Map<String, String> _demoRoster = {
+    '1': 'Алексей Морозов',
+    '2': 'Мария Соколова',
+    '3': 'Дмитрий Волков',
+    '4': 'Анна Кузнецова',
+    '5': 'Никита Попов',
+    '6': 'София Лебедева',
+    '7': 'Артём Новиков',
+    '8': 'Екатерина Фёдорова',
+    '9': 'Максим Егоров',
+    '10': 'Полина Павлова',
+  };
+
   final SharedPreferences _preferences;
 
   @override
   Future<Map<DateTime, AttendanceSession>> loadAll() async {
     final raw = _preferences.getString(_key);
-    if (raw == null || raw.isEmpty) return _loadLegacy();
+    if (raw == null || raw.isEmpty) {
+      return _cleanupDays(_loadLegacy());
+    }
 
     final decoded = _decode(raw);
+    // Формат `saveAll`: обёртка `{ 'days': { 'ГГГГ-ММ-ДД': сессия } }`.
+    // Раньше чтение обходило верхний уровень и ничего не находило —
+    // отметки не переживали перезапуск.
+    final wrapped = decoded is Map ? decoded['days'] : null;
+    final source = wrapped is Map ? wrapped : decoded;
     final days = <DateTime, AttendanceSession>{};
-    if (decoded is! Map) return days;
-    for (final item in decoded.entries) {
+    if (source is! Map) return days;
+    for (final item in source.entries) {
       final date = DateTime.tryParse(item.key.toString());
       if (date == null || item.value is! Map) continue;
       try {
@@ -57,7 +83,34 @@ class SharedPreferencesAttendanceStore implements AttendanceStore {
         // Повреждённый день пропускаем, остальные читаем.
       }
     }
-    return days;
+    return _cleanupDays(days);
+  }
+
+  /// Вычищает демонстрационных студентов из прочитанных дней и, если
+  /// что-то изменилось, переписывает хранилище без них.
+  Future<Map<DateTime, AttendanceSession>> _cleanupDays(
+    Map<DateTime, AttendanceSession> days,
+  ) async {
+    final cleaned = <DateTime, AttendanceSession>{};
+    var changed = false;
+    for (final item in days.entries) {
+      final session = item.value.withoutDemoStudents(_demoRoster);
+      if (!identical(session, item.value)) changed = true;
+      cleaned[item.key] = session;
+    }
+    if (changed) {
+      // Хранить пустые дни незачем — как и при обычной записи.
+      await saveAll([
+        for (final session in cleaned.values)
+          if (session.entries.isNotEmpty) session,
+      ]);
+    }
+    // Дни, опустевшие после вычистки (там были только демо-отметки),
+    // из результата тоже уходят.
+    cleaned.removeWhere(
+      (_, session) => session.students.isEmpty && session.entries.isEmpty,
+    );
+    return cleaned;
   }
 
   Map<DateTime, AttendanceSession> _loadLegacy() {

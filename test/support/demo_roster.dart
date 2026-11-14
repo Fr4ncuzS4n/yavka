@@ -1,10 +1,12 @@
-import '../models/student.dart';
+import 'package:yavka/models/student.dart';
 
-/// Имя группы для примера данных.
-const String exampleGroupName = 'БИТ-24-03';
+/// Демонстрационная группа — только для тестов интерфейса.
+///
+/// В само приложение примерные студенты больше не заливаются: список
+/// группы берётся из журнала Google Таблицы.
+const String demoGroupName = 'БИТ-24-03';
 
-/// Пример списка группы — временные данные для демонстрации.
-const List<Student> exampleStudents = [
+const List<Student> demoStudents = [
   Student(id: '1', fullName: 'Алексей Морозов'),
   Student(id: '2', fullName: 'Мария Соколова'),
   Student(id: '3', fullName: 'Дмитрий Волков'),

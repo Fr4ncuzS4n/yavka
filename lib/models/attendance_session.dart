@@ -147,6 +147,52 @@ class AttendanceSession {
     return copyWith(date: today, entries: const {});
   }
 
+  /// Убирает студентов, входящих в демо-состав, вместе с их отметками.
+  ///
+  /// [demoRoster] — отпечаток демонстрационной группы: идентификатор →
+  /// ФИО. Студент считается демонстрационным, только если совпали и
+  /// ФИО, и идентификатор: у настоящего студента из журнала
+  /// идентификатор — его ФИО, демо-номером он быть не может. Отметки
+  /// убираются по ключам с этим идентификатором.
+  AttendanceSession withoutDemoStudents(Map<String, String> demoRoster) {
+    if (demoRoster.isEmpty) return this;
+    final demoIdByName = {
+      for (final item in demoRoster.entries)
+        _normalizeName(item.value): item.key.trim(),
+    }..removeWhere((_, id) => id.isEmpty);
+    if (demoIdByName.isEmpty) return this;
+
+    final ids = <String>{};
+    final keptStudents = <Student>[];
+    for (final student in students) {
+      final demoId = demoIdByName[_normalizeName(student.fullName)];
+      // Идентификатор сравниваем и добавляем в нормализованном виде:
+      // в сохранённых данных он мог прийти с лишними пробелами.
+      final trimmedId = student.id.trim();
+      if (demoId != null && demoId == trimmedId) {
+        ids.add(trimmedId);
+      } else {
+        keptStudents.add(student);
+      }
+    }
+    if (ids.isEmpty) return this;
+
+    final keptEntries = <String, AttendanceEntry>{};
+    for (final item in entries.entries) {
+      if (ids.contains(item.key.split('|').first.trim())) continue;
+      keptEntries[item.key] = item.value;
+    }
+    return copyWith(
+      students: List<Student>.unmodifiable(keptStudents),
+      entries: keptEntries,
+    );
+  }
+
+  /// ФИО без регистра, лишних пробелов и переносов строк — чтобы
+  /// «Алексей  Морозов» из хранилища совпал с демо-«Алексей Морозов».
+  static String _normalizeName(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
   AttendanceSession copyWith({
     String? groupName,
     DateTime? date,
