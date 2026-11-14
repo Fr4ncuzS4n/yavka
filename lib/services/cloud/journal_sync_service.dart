@@ -23,6 +23,8 @@ class JournalSyncResult {
 
   /// Дни месяца, отметки которых не расставлены: дня нет в журнале или
   /// блок колонок пар — обрывок, в него посещаемость не поместится.
+  /// Выходных здесь нет и не бывает: отметки за них не пишутся молча
+  /// (отмечать в выходные запрещено, в журнале их колонок нет).
   final List<int> skippedDays;
 
   bool get hasSkippedDays => skippedDays.isNotEmpty;
@@ -30,7 +32,8 @@ class JournalSyncResult {
   /// Предупреждение о пропущенных днях для экрана синхронизации.
   String get skippedNote {
     if (skippedDays.isEmpty) return '';
-    return 'Посещаемость за дни ${skippedDays.join(', ')} расставить '
+    final za = skippedDays.length == 1 ? 'за день' : 'за дни';
+    return 'Посещаемость $za ${skippedDays.join(', ')} расставить '
         'нельзя: в журнале нет дня или колонок пар.';
   }
 }
@@ -151,6 +154,10 @@ class JournalSyncService {
     for (final session in sessions) {
       if (!_isSameMonth(session.date, month)) continue;
       if (session.entries.isEmpty) continue;
+      // В выходные отметки запрещены и в журнале их колонок нет:
+      // такие сессии (например, оставшиеся со старых версий приложения)
+      // пропускаются молча — без записи и без предупреждения.
+      if (weekdayOf(session.date) >= 6) continue;
 
       final span = layout.spanOf(session.date.day);
       final schedulePairs =

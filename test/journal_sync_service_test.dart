@@ -391,10 +391,11 @@ void main() {
       schedule: scheduleWith(),
     );
 
-    // Дней 1 и 2 нет в журнале: отметки не расставить, об ошибках
-    // речи нет — дни попадают в предупреждение.
+    // Дня 2 (понедельник) в журнале нет: отметки не расставить, об
+    // ошибках речи нет — день попадает в предупреждение. День 1 —
+    // воскресенье: отметки за выходной не пишутся и не предупреждают.
     expect(result.updatedCells, 0);
-    expect(result.skippedDays, [1, 2]);
+    expect(result.skippedDays, [2]);
     expect(api.batchUpdateCalls, 0);
 
     // Зато день 3, который в журнале есть, пишется как обычно.
@@ -419,6 +420,41 @@ void main() {
     expect(written.updatedCells, 3);
     expect(written.skippedDays, isEmpty);
     expect(api.cell(tabTitle, 3, 2).backgroundColor, 0x00FF00);
+  });
+
+  test('отметки за выходной день не пишутся и не предупреждают', () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+      alexey,
+      maria,
+    ]);
+    final service = JournalSyncService(api);
+
+    // 15 ноября 2026 — воскресенье: колонок под выходные в журнале нет
+    // по задумке, поэтому отметки за него просто не отправляются.
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        AttendanceSession(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 15),
+          students: const [alexey, maria],
+          entries: {
+            '1': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 15, 9),
+            ),
+          },
+        ),
+      ],
+      schedule: scheduleWith(),
+    );
+
+    expect(result.updatedCells, 0);
+    expect(result.skippedDays, isEmpty);
+    expect(result.skippedNote, isEmpty);
+    expect(api.batchUpdateCalls, 0);
   });
 
   test('студента нет в журнале — приложение не добавляет его само',
