@@ -13,6 +13,7 @@ import 'package:yavka/models/student.dart';
 import 'package:yavka/services/cloud/cloud_sync_controller.dart';
 import 'package:yavka/services/cloud/google_auth_service.dart';
 import 'package:yavka/services/cloud/journal_mapping.dart';
+import 'package:yavka/services/cloud/oauth/oauth_client_json.dart';
 import 'package:yavka/services/cloud/oauth/oauth_models.dart';
 import 'package:yavka/services/cloud/token_store.dart';
 
@@ -332,6 +333,35 @@ void main() {
 
     expect(env.cloud.error, contains('определить месяц'));
     expect(env.api.batchUpdateCalls, 0);
+  });
+
+  test('импорт JSON OAuth-клиента сохраняет настройки', () async {
+    final env = build();
+    await env.cloud.applyOAuthClientFile(
+      const OAuthClientFile(
+        kind: 'Desktop app',
+        clientId: 'imported-id.apps.googleusercontent.com',
+        clientSecret: 'imported-secret',
+      ),
+    );
+
+    final stored = await env.settings.load();
+    expect(stored.clientId, 'imported-id.apps.googleusercontent.com');
+    expect(stored.clientSecret, 'imported-secret');
+    // Клиент сразу сконфигурирован — можно входить.
+    expect(env.cloud.auth.isConfigured, isTrue);
+
+    // Web-файл дополняет настройку, а не затирает desktop-поля.
+    await env.cloud.applyOAuthClientFile(
+      const OAuthClientFile(
+        kind: 'Web application',
+        webClientId: 'web-id.apps.googleusercontent.com',
+      ),
+    );
+    final updated = await env.settings.load();
+    expect(updated.webClientId, 'web-id.apps.googleusercontent.com');
+    expect(updated.clientId, 'imported-id.apps.googleusercontent.com');
+    expect(updated.clientSecret, 'imported-secret');
   });
 
   test('ошибка прав редактора сохраняется в состоянии', () async {

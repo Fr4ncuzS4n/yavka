@@ -13,6 +13,7 @@ import 'cloud_exceptions.dart';
 import 'google_auth_service.dart';
 import 'journal_mapping.dart';
 import 'journal_sync_service.dart';
+import 'oauth/oauth_client_json.dart';
 import 'oauth/oauth_models.dart';
 import 'sheets_api.dart';
 
@@ -307,6 +308,18 @@ class CloudSyncController extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  /// Регистрирует OAuth-клиент из JSON-файла, скачанного из
+  /// Google Cloud Console.
+  ///
+  /// Заполняются только те поля, которые есть в файле: значения,
+  /// введённые раньше, остаются.
+  Future<void> applyOAuthClientFile(OAuthClientFile client) =>
+      saveOAuthConfig(
+        clientId: client.clientId,
+        clientSecret: client.clientSecret,
+        webClientId: client.webClientId,
+      );
 
   Future<void> syncNow() async {
     await _run(() async {

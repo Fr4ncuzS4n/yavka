@@ -1,9 +1,11 @@
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/cloud/cloud_sync_controller.dart';
 import '../services/cloud/journal_mapping.dart';
 import '../services/cloud/journal_month.dart';
+import '../services/cloud/oauth/oauth_client_json.dart';
 import 'journal_setup_screen.dart';
 import '../theme/app_theme.dart';
 
@@ -116,6 +118,59 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Настройки OAuth сохранены')));
+  }
+
+  /// Регистрация OAuth-клиента из JSON-файла, скачанного из
+  /// Google Cloud Console: пользователь не копирует Client ID/Secret
+  /// вручную.
+  Future<void> _importOAuthJson() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final errorColor = Theme.of(context).colorScheme.error;
+    final XFile? file;
+    try {
+      file = await openFile(
+        acceptedTypeGroups: const [
+          XTypeGroup(label: 'JSON', extensions: ['json']),
+        ],
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Не удалось открыть выбор файла: $error'),
+          backgroundColor: errorColor,
+        ),
+      );
+      return;
+    }
+    if (file == null) return; // выбор файла отменён
+
+    try {
+      final client = OAuthClientJson.parse(await file.readAsString());
+      await _cloud.applyOAuthClientFile(client);
+      if (!mounted) return;
+      _fillFromSettings();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'OAuth-клиент распознан: ${client.kind} — ${client.summary}',
+          ),
+        ),
+      );
+    } on FormatException catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: errorColor,
+        ),
+      );
+    } catch (error) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Не удалось прочитать файл: $error'),
+          backgroundColor: errorColor,
+        ),
+      );
+    }
   }
 
   @override
@@ -325,6 +380,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                   clientSecretController: _clientSecretController,
                   webClientIdController: _webClientIdController,
                   onSave: _saveOAuthConfig,
+                  onImport: _importOAuthJson,
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -590,6 +646,7 @@ class _OAuthConfigCard extends StatelessWidget {
     required this.clientSecretController,
     required this.webClientIdController,
     required this.onSave,
+    required this.onImport,
   });
 
   final CloudSyncController cloud;
@@ -597,6 +654,7 @@ class _OAuthConfigCard extends StatelessWidget {
   final TextEditingController clientSecretController;
   final TextEditingController webClientIdController;
   final Future<void> Function() onSave;
+  final Future<void> Function() onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -627,6 +685,12 @@ class _OAuthConfigCard extends StatelessWidget {
             'Sheets API. Для Android/iOS/Linux/Windows подойдёт тип '
             '«Desktop app»; для web — «Web application». Значения можно '
             'также задать при сборке через --dart-define.',
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: onImport,
+            icon: const Icon(Icons.upload_file_rounded),
+            label: const Text('Загрузить JSON из Google Cloud Console'),
           ),
           const SizedBox(height: 12),
           if (cloud.isWeb)
