@@ -6,21 +6,22 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/attendance_controller.dart';
 import '../../data/cloud_settings.dart';
-import '../../data/notification_controller.dart';
+import '../../data/schedule_controller.dart';
 import '../../models/attendance_session.dart';
 import '../../models/student.dart';
-import '../../models/sync_notification.dart';
 import 'cloud_exceptions.dart';
 import 'google_auth_service.dart';
-import 'month_grid_sync_service.dart';
+import 'journal_mapping.dart';
+import 'journal_sync_service.dart';
 import 'oauth/oauth_models.dart';
 import 'sheets_api.dart';
 
-/// Управляет подключением к Google Таблице и фоновой синхронизацией.
+/// Управляет подключением к Google Таблице и синхронизацией.
 ///
-/// Отметки живут в листе месяца (например «Ноябрь 2026»): приложение
-/// находит лист по месяцу, к которому относится отметка, а выбор месяца —
-/// выпадающим списком в настройках облака.
+/// Приложение подстраивается под существующий журнал и ничего в нём не
+/// меняет: только отмечает ячейку пары цветом (и временем при опоздании).
+/// Месяц подбирается из названия таблицы «МЕСЯЦ : ГОД», раскладка
+/// журнала — из настройки, которую пользователь заполняет один раз.
 class CloudSyncController extends ChangeNotifier {
   CloudSyncController({
     required this.attendance,
@@ -28,12 +29,12 @@ class CloudSyncController extends ChangeNotifier {
     required SheetsApi sheetsApi,
     required CloudSettingsStore settingsStore,
     required bool isWeb,
-    NotificationController? notifications,
+    ScheduleController? schedule,
   }) : _api = sheetsApi,
        _settingsStore = settingsStore,
        _isWeb = isWeb,
-       _notifications = notifications,
-       _sync = MonthGridSyncService(sheetsApi) {
+       _schedule = schedule,
+       _sync = JournalSyncService(sheetsApi) {
     attendance.addListener(_onAttendanceChanged);
     auth.addListener(_onAuthChanged);
   }
@@ -42,19 +43,19 @@ class CloudSyncController extends ChangeNotifier {
   final GoogleAuthService auth;
   final SheetsApi _api;
   final CloudSettingsStore _settingsStore;
-  final MonthGridSyncService _sync;
-  final NotificationController? _notifications;
+  final JournalSyncService _sync;
+  final ScheduleController? _schedule;
   final bool _isWeb;
 
   CloudSettings _settings = const CloudSettings();
-  DateTime _selectedMonth = _monthOf(DateTime.now());
+  DateTime? _journalMonth;
   bool _initialized = false;
   bool _busy = false;
   bool _pending = false;
   bool _applyingRemote = false;
   String? _error;
   DateTime? _lastSyncAt;
-  GridSyncResult? _lastResult;
+  JournalSyncResult? _lastResult;
   Timer? _debounce;
 
   CloudSettings get settings => _settings;
@@ -73,7 +74,7 @@ class CloudSyncController extends ChangeNotifier {
 
   DateTime? get lastSyncAt => _lastSyncAt;
 
-  GridSyncResult? get lastResult => _lastResult;
+  JournalSyncResult? get lastResult => _lastResult;
 
   String? get spreadsheetId => _settings.spreadsheetId;
 
@@ -81,23 +82,26 @@ class CloudSyncController extends ChangeNotifier {
 
   bool get autoSync => _settings.autoSync;
 
-  /// Месяц, с которым работает синхронизация.
-  DateTime get selectedMonth => _selectedMonth;
+  /// Настройка журнала, если пользователь её уже заполнил.
+  JournalMapping? get journalMapping => _settings.journalMapping;
 
-  DateTime get _monthOfAttendance => _monthOf(attendance.session.date);
+  /// Нужна ли настройка журнала: таблица подключена, а раскладка нет.
+  bool get needsJournalSetup => isConfigured && journalMapping == null;
 
-  static DateTime _monthOf(DateTime date) => DateTime(date.year, date.month);
+  /// Месяц журнала, подобранный из названия таблицы. Известен после
+  /// первой успешной синхронизации или настройки.
+  DateTime? get journalMonth => _journalMonth;
 
-  bool _hasAutoSyncInvolved() => isConfigured && isSignedIn && autoSync;
+  /// Расписание приложения: по нему считаются пары в днях.
+  ScheduleController? get schedule => _schedule;
 
-  /// Уведомления о отметках на парах (если переданы при создании).
-  NotificationController? get notifications => _notifications;
+  bool _hasAutoSyncInvolved() =>
+      isConfigured &&
+      isSignedIn &&
+      autoSync &&
+      journalMapping != null;
 
-  /// Имя для уведомлений: как пользователя видят другие при чтении
-  /// уведомлений из таблицы.
-  String get displayName => _settings.displayName;
-
-  /// Сохраняет имя, которым подписываются уведомления о отметках на парах.
+  /// Сохраняет имя, которым подписываются уведомления о отметках.
   Future<void> setDisplayName(String value) async {
     final name = value.trim();
     if (name == _settings.displayName) return;
@@ -122,8 +126,12 @@ class CloudSyncController extends ChangeNotifier {
     } catch (_) {
       // Настройки по умолчанию — приложение продолжит работать локально.
     }
-    _loadMonthFromSettings();
     auth.configure(_configFromSettings());
+
+    if (!_hasAutoSyncInvolved()) {
+      notifyListeners();
+      return;
+    }
 
     _busy = true;
     notifyListeners();
@@ -138,15 +146,6 @@ class CloudSyncController extends ChangeNotifier {
     } finally {
       _busy = false;
       notifyListeners();
-    }
-  }
-
-  void _loadMonthFromSettings() {
-    final stored = _settings.selectedSheetMonth;
-    if (stored != null) {
-      _selectedMonth = DateTime(stored.year, stored.month);
-    } else {
-      _selectedMonth = _monthOfAttendance;
     }
   }
 
@@ -168,6 +167,7 @@ class CloudSyncController extends ChangeNotifier {
   /// Подключает существующую таблицу по ссылке или ID.
   ///
   /// Подходит, если пользователь — редактор, а владелец таблицы другой.
+  /// Приложение не создаёт таблицы: существующий журнал не меняется.
   Future<void> connectSpreadsheet(String linkOrId) async {
     await _run(() async {
       _requireSignedIn();
@@ -185,28 +185,13 @@ class CloudSyncController extends ChangeNotifier {
       _settings = _settings.copyWith(spreadsheetId: id);
       await _saveSettings();
       _pending = false;
+      _journalMonth = null;
       notifyListeners();
 
       if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
       }
-    });
-  }
-
-  /// Создаёт новую таблицу и подключает её.
-  Future<void> createSpreadsheet() async {
-    await _run(() async {
-      _requireSignedIn();
-      final title = 'Явка — ${attendance.session.groupName}';
-      final meta = await _api.createSpreadsheet(title);
-      _settings = _settings.copyWith(spreadsheetId: meta.id);
-      await _saveSettings();
-      _pending = false;
-      notifyListeners();
-
-      await _pull();
-      await _push();
     });
   }
 
@@ -217,6 +202,7 @@ class CloudSyncController extends ChangeNotifier {
       _pending = false;
       _lastSyncAt = null;
       _lastResult = null;
+      _journalMonth = null;
       notifyListeners();
     });
   }
@@ -232,30 +218,71 @@ class CloudSyncController extends ChangeNotifier {
     }
   }
 
-  /// Выбирает месяц журнала (выпадающий список в настройках облака).
-  Future<void> selectMonth(DateTime month) async {
-    final normalized = DateTime(month.year, month.month);
-    if (normalized == _selectedMonth) return;
-
-    _selectedMonth = normalized;
-    _error = null;
-    notifyListeners();
-    try {
-      await _settingsStore.save(
-        _settings.copyWith(
-          sheetYear: normalized.year,
-          sheetMonth: normalized.month,
-        ),
-      );
-    } catch (error) {
-      _error = _message(error);
-      notifyListeners();
+  /// Листы подключённой таблицы — для выбора листа журнала в настройке.
+  Future<List<SheetTab>> fetchTabs() async {
+    _requireSignedIn();
+    final id = _settings.spreadsheetId;
+    if (id == null) {
+      throw const CloudSyncException('Сначала подключите таблицу.');
     }
+    final meta = await _api.getSpreadsheet(id);
+    return meta.tabs;
+  }
 
-    if (!_hasAutoSyncInvolved()) return;
+  /// Пробная настройка журнала: снимает раскладку и сверяет с
+  /// расписанием, ничего не сохраняя.
+  Future<JournalSnapshot> previewJournal({
+    required String tabTitle,
+    required int dayRow,
+    required int fioColumn,
+    required int firstStudentRow,
+  }) async {
+    _requireSignedIn();
+    final id = _settings.spreadsheetId;
+    if (id == null) {
+      throw const CloudSyncException('Сначала подключите таблицу.');
+    }
+    final mapping = JournalMapping(
+      tabTitle: tabTitle,
+      dayRow: dayRow,
+      fioColumn: fioColumn,
+      firstStudentRow: firstStudentRow,
+    );
+    return _sync.snapshot(
+      spreadsheetId: id,
+      mapping: mapping,
+      schedule: _schedule,
+    );
+  }
+
+  /// Сохраняет настройку журнала и сразу подтягивает данные.
+  Future<void> saveJournalMapping(JournalMapping mapping) async {
     await _run(() async {
-      await _pull();
-      await _push();
+      _settings = _settings.copyWith(
+        journalTabTitle: mapping.tabTitle,
+        journalDayRow: mapping.dayRow,
+        journalFioColumn: mapping.fioColumn,
+        journalFirstStudentRow: mapping.firstStudentRow,
+      );
+      await _saveSettings();
+      notifyListeners();
+
+      if (_hasAutoSyncInvolved()) {
+        await _pull();
+        await _push();
+      }
+    });
+  }
+
+  /// Сбрасывает настройку журнала (например, при смене раскладки).
+  Future<void> resetJournalMapping() async {
+    await _run(() async {
+      _settings = _settings.copyWith(clearJournal: true);
+      await _saveSettings();
+      _journalMonth = null;
+      _lastSyncAt = null;
+      _lastResult = null;
+      notifyListeners();
     });
   }
 
@@ -285,6 +312,7 @@ class CloudSyncController extends ChangeNotifier {
     await _run(() async {
       _requireConfigured();
       _requireSignedIn();
+      _requireJournalSetup();
       await _pull();
       await _push();
     });
@@ -294,6 +322,7 @@ class CloudSyncController extends ChangeNotifier {
     await _run(() async {
       _requireConfigured();
       _requireSignedIn();
+      _requireJournalSetup();
       await _pull();
     });
   }
@@ -303,116 +332,115 @@ class CloudSyncController extends ChangeNotifier {
 
   Future<void> _push() async {
     final spreadsheetId = _settings.spreadsheetId;
-    if (spreadsheetId == null) return;
+    final mapping = _settings.journalMapping;
+    if (spreadsheetId == null || mapping == null) return;
 
-    // В журнал уходят все отмеченные дни выбранного месяца, а не только
-    // сегодняшний: задним числом тоже можно отмечать.
-    final sessions = attendance.sessionsInMonth(_selectedMonth);
+    final snapshot = await _sync.snapshot(
+      spreadsheetId: spreadsheetId,
+      mapping: mapping,
+      schedule: _schedule,
+    );
+    _requireMonth(snapshot);
+    _requireConsistency(snapshot);
+    final month = snapshot.month!;
+    _journalMonth = month;
+
+    // В журнал уходят все отмеченные дни месяца, а не только сегодняшний:
+    // задним числом тоже можно отмечать.
+    var sessions = attendance.sessionsInMonth(month);
+    if (sessions.isEmpty &&
+        _isSameMonth(attendance.session.date, month)) {
+      sessions = [attendance.session];
+    }
+
     final result = await _sync.push(
       spreadsheetId: spreadsheetId,
-      month: _selectedMonth,
-      sessions: sessions.isEmpty ? [attendance.session] : sessions,
+      mapping: mapping,
+      sessions: sessions,
+      schedule: _schedule,
     );
     _lastResult = result;
     _lastSyncAt = DateTime.now();
     _pending = false;
     _error = null;
-
-    // Уведомляем всех, кто пользуется таблицей: отмеченные пары
-    // уходят в лист «Уведомления».
-    await _flushLessonNotifications(spreadsheetId);
-
     notifyListeners();
-  }
-
-  Future<void> _flushLessonNotifications(String spreadsheetId) async {
-    final notifications = _notifications;
-    if (notifications == null) return;
-    final outbox = notifications.drainOutbox();
-    if (outbox.isEmpty) return;
-    try {
-      await _sync.pushNotifications(
-        spreadsheetId: spreadsheetId,
-        notifications: [for (final item in outbox) _asNotification(item)],
-      );
-    } catch (_) {
-      // Отправка не удалась — возвращаем уведомления в отложенные,
-      // чтобы они ушли при следующей синхронизации.
-      notifications.restoreOutbox(outbox);
-      rethrow;
-    }
-  }
-
-  SyncNotification _asNotification(PendingLessonMark item) {
-    final author = _settings.displayName.trim().isEmpty
-        ? 'Староста'
-        : _settings.displayName.trim();
-    return SyncNotification(
-      id: '${item.id}|${item.count}',
-      createdAt: DateTime.now(),
-      author: author,
-      groupName: item.groupName,
-      lessonTitle: item.lessonTitle,
-      message:
-          'Отметка на паре «${item.lessonTitle}» (${item.lessonTime}): '
-          '${item.count} ${_pluralMark(item.count)}',
-    );
-  }
-
-  static String _pluralMark(int count) {
-    final mod10 = count % 10;
-    final mod100 = count % 100;
-    if (mod10 == 1 && mod100 != 11) return 'отметка';
-    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-      return 'отметки';
-    }
-    return 'отметок';
   }
 
   Future<void> _pull() async {
     final spreadsheetId = _settings.spreadsheetId;
-    if (spreadsheetId == null) return;
+    final mapping = _settings.journalMapping;
+    if (spreadsheetId == null || mapping == null) return;
 
-    final remote = await _sync.read(spreadsheetId, _selectedMonth);
+    final snapshot = await _sync.snapshot(
+      spreadsheetId: spreadsheetId,
+      mapping: mapping,
+      schedule: _schedule,
+    );
+    _requireMonth(snapshot);
+    _requireConsistency(snapshot);
+    final month = snapshot.month!;
+    _journalMonth = month;
+
+    final roster = await _sync.read(
+      spreadsheetId: spreadsheetId,
+      mapping: mapping,
+      month: month,
+      schedule: _schedule,
+    );
+
     _applyingRemote = true;
     try {
-      if (remote != null) {
-        attendance.mergeRoster(remote.students);
-        attendance.mergeRemote([
-          for (final entry in remote.entries.entries)
-            for (final item in entry.value.entries)
-              AttendanceRecord(
-                groupName: attendance.session.groupName,
-                date: DateTime(
-                  _selectedMonth.year,
-                  _selectedMonth.month,
-                  entry.key,
-                ),
-                student: remote.students.firstWhere(
-                  (candidate) => candidate.id == item.key,
-                  orElse: () => Student(id: item.key, fullName: item.key),
-                ),
-                entry: item.value,
-              ),
-        ]);
-      }
+      attendance.mergeRoster(roster.students);
+      final known = attendance.students;
+      attendance.mergeRemote([
+        for (final day in roster.entries.entries)
+          for (final item in day.value.entries)
+            AttendanceRecord(
+              groupName: attendance.session.groupName,
+              date: DateTime(month.year, month.month, day.key),
+              student: _resolveStudent(item.key, known),
+              entry: item.value,
+            ),
+      ]);
     } finally {
       _applyingRemote = false;
-    }
-
-    // Подтягиваем уведомления других пользователей таблицы.
-    final notifications = _notifications;
-    if (notifications != null) {
-      final remote = await _sync.pullNotifications(
-        spreadsheetId: spreadsheetId,
-        groupName: attendance.session.groupName,
-      );
-      notifications.addRemote(remote);
     }
 
     _lastSyncAt = DateTime.now();
     _error = null;
     notifyListeners();
+  }
+
+  /// Отметки из журнала подписаны ФИО: подставляем студента из списка
+  /// группы, чтобы отметки легли в уже знакомые ключи.
+  Student _resolveStudent(String fullName, List<Student> students) {
+    for (final student in students) {
+      if (student.id == fullName) return student;
+    }
+    for (final student in students) {
+      if (student.fullName.toLowerCase() == fullName.toLowerCase()) {
+        return student;
+      }
+    }
+    return Student(id: fullName, fullName: fullName);
+  }
+
+  bool _isSameMonth(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month;
+
+  void _requireMonth(JournalSnapshot snapshot) {
+    if (snapshot.month != null) return;
+    throw const CloudSyncException(
+      'Не удалось определить месяц. Назовите таблицу или лист '
+      '«МЕСЯЦ : ГОД», например «Ноябрь : 2026».',
+    );
+  }
+
+  /// Синхронизация запрещена, пока таблица не сходится с расписанием:
+  /// отметки попадут не в те колонки.
+  void _requireConsistency(JournalSnapshot snapshot) {
+    if (snapshot.check.ok) return;
+    throw CloudSyncException(snapshot.check.issues.first.message);
   }
 
   Future<void> _run(Future<void> Function() action) async {
@@ -450,6 +478,14 @@ class CloudSyncController extends ChangeNotifier {
     if (!isSignedIn) {
       throw const CloudSyncException('Сначала войдите в аккаунт Google.');
     }
+  }
+
+  void _requireJournalSetup() {
+    if (journalMapping != null) return;
+    throw const CloudSyncException(
+      'Сначала настройте журнал: объясните приложению, где числа дней, '
+      'ФИО и пары. Кнопка «Настроить журнал» на экране Google Диска.',
+    );
   }
 
   void _onAttendanceChanged() {

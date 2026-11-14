@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/cloud/cloud_sync_controller.dart';
-import '../services/cloud/month_grid_codec.dart';
+import '../services/cloud/journal_mapping.dart';
+import '../services/cloud/journal_month.dart';
+import 'journal_setup_screen.dart';
 import '../theme/app_theme.dart';
 
 /// Экран подключения Google Диска и синхронизации посещаемости.
+///
+/// Приложение подстраивается под существующий журнал и не меняет его:
+/// пишутся только отметки в ячейки пар. Месяц подбирается из названия
+/// таблицы «МЕСЯЦ : ГОД», поэтому новый месяц — просто новая ссылка.
 class CloudSyncScreen extends StatefulWidget {
   const CloudSyncScreen({super.key, required this.cloud});
 
@@ -91,6 +97,15 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     }
   }
 
+  Future<void> _openJournalSetup() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => JournalSetupScreen(cloud: _cloud),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
   Future<void> _saveOAuthConfig() async {
     await _cloud.saveOAuthConfig(
       clientId: _clientIdController.text.trim(),
@@ -118,11 +133,12 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                 _StatusCard(cloud: cloud),
                 const SizedBox(height: 12),
                 if (cloud.isConfigured) ...[
-                  _MonthCard(
+                  _JournalCard(
                     cloud: cloud,
-                    onMonthSelected: (month) => _runAction(
-                      () => cloud.selectMonth(month),
-                    ),
+                    onSetup: _openJournalSetup,
+                    onReset: cloud.isBusy
+                        ? null
+                        : () => _runAction(cloud.resetJournalMapping),
                   ),
                   const SizedBox(height: 12),
                 ],
@@ -165,9 +181,11 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                       )
                     else ...[
                       const Text(
-                        'Вставьте ссылку на существующую Google Таблицу или '
-                        'создайте новую. Если таблица принадлежит другому '
-                        'человеку, попросите у него доступ «Редактор».',
+                        'Вставьте ссылку на Google Таблицу с готовым '
+                        'журналом. Если таблица принадлежит другому '
+                        'человеку, попросите у него доступ «Редактор». '
+                        'Новый месяц — новая ссылка, месяц подбирается '
+                        'из названия «МЕСЯЦ : ГОД».',
                       ),
                       const SizedBox(height: 12),
                       TextField(
@@ -182,39 +200,26 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                         maxLines: 2,
                       ),
                       const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: cloud.isBusy
-                                ? null
-                                : () => _runAction(
-                                    () => cloud.connectSpreadsheet(
-                                      _linkController.text,
-                                    ),
-                                  ),
-                            icon: const Icon(Icons.link_rounded),
-                            label: const Text('Подключить'),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: cloud.isBusy
-                                ? null
-                                : () => _runAction(cloud.createSpreadsheet),
-                            icon: const Icon(Icons.add_rounded),
-                            label: const Text('Создать таблицу'),
-                          ),
-                        ],
+                      FilledButton.icon(
+                        onPressed: cloud.isBusy
+                            ? null
+                            : () => _runAction(
+                                () => cloud.connectSpreadsheet(
+                                  _linkController.text,
+                                ),
+                              ),
+                        icon: const Icon(Icons.link_rounded),
+                        label: const Text('Подключить'),
                       ),
                     ],
                     const SizedBox(height: 12),
                     const _Note(
                       icon: Icons.verified_user_outlined,
                       text:
-                          'Приложение не меняет права доступа и не удаляет '
-                          'таблицу. Оно только читает и записывает строки '
-                          'посещаемости, поэтому подходит и для со-владельца '
-                          '(редактора).',
+                          'Приложение не меняет таблицу: не рисует шапки, '
+                          'не объединяет ячейки и не создаёт листы. Оно '
+                          'только отмечает ячейки пар цветом, поэтому '
+                          'подходит и со-владельцу (редактору).',
                     ),
                   ],
                 ),
@@ -308,9 +313,8 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                   children: [
                     const Text(
                       'Когда вы отмечаете студентов на паре из расписания, '
-                      'все, кто пользуется этой же таблицей, получают '
-                      'уведомление: оно появляется у них в колокольчике '
-                      'после синхронизации.',
+                      'уведомление появляется в колокольчике на этом '
+                      'устройстве.',
                     ),
                   ],
                 ),
@@ -339,51 +343,31 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
   }
 }
 
-/// Выбор месяца журнала.
-///
-/// Отметка пишется в лист того месяца, к которому относится день
-/// посещаемости; обычно это текущий месяц. Выпадающим списком можно
-/// переключиться на другой лист (например, чтобы отметить задним числом
-/// на листе прошлого месяца).
-class _MonthCard extends StatelessWidget {
-  const _MonthCard({required this.cloud, required this.onMonthSelected});
+/// Карточка настройки журнала: где числа, ФИО и пары.
+class _JournalCard extends StatelessWidget {
+  const _JournalCard({
+    required this.cloud,
+    required this.onSetup,
+    required this.onReset,
+  });
 
   final CloudSyncController cloud;
-  final void Function(DateTime month) onMonthSelected;
-
-  static const _shifts = [-6, -5, -4, -3, -2, -1, 0, 1];
+  final VoidCallback onSetup;
+  final VoidCallback? onReset;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final now = DateTime.now().toLocal();
-    final nowMonth = DateTime(now.year, now.month);
-    final selected = DateTime(
-      cloud.selectedMonth.year,
-      cloud.selectedMonth.month,
-    );
-
-    final items = <DropdownMenuItem<String>>[];
-    for (final shift in _shifts) {
-      final month = DateTime(nowMonth.year, nowMonth.month + shift);
-      final key =
-          '${month.year}-${month.month.toString().padLeft(2, '0')}';
-      final label =
-          '${MonthGridCodec.monthsRu[month.month - 1]} ${month.year}';
-      items.add(DropdownMenuItem(value: key, child: Text(label)));
-    }
-
-    final selectedKey =
-        '${selected.year}-${selected.month.toString().padLeft(2, '0')}';
-    final hasSelected = items.any((item) => item.value == selectedKey);
+    final mapping = cloud.journalMapping;
+    final month = cloud.journalMonth;
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: theme.brightness == Brightness.light
             ? Colors.white
-            : const Color(0xFF1C1D22),
+            : AppPalette.cardDark,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: theme.brightness == Brightness.light
@@ -394,42 +378,58 @@ class _MonthCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Месяц журнала', style: theme.textTheme.titleMedium),
+          Row(
+            children: [
+              Icon(
+                mapping == null
+                    ? Icons.tune_rounded
+                    : Icons.check_circle_rounded,
+                color: mapping == null ? scheme.tertiary : scheme.primary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  mapping == null
+                      ? 'Журнал не настроен'
+                      : 'Журнал настроен: лист «${mapping.tabTitle}»',
+                  style: theme.textTheme.titleMedium,
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
-            'Отметки пишутся в лист выбранного месяца. Лист создаётся '
-            'автоматически, если его ещё нет.',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: scheme.onSurfaceVariant),
+            mapping == null
+                ? 'Объясните приложению, где в таблице числа дней, ФИО '
+                      'и пары, — и оно само подстроится под ваш журнал.'
+                : 'Числа дней: строка ${(mapping.dayRow + 1)}, ФИО: колонка '
+                      '${JournalMapping.columnLetter(mapping.fioColumn)}, '
+                      'студенты: со строки '
+                      '${(mapping.firstStudentRow + 1)}.'
+                      '${month == null ? '' : ' Месяц: ${JournalMonth.displayName(month)}.'}',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: hasSelected ? selectedKey : null,
-            decoration: const InputDecoration(
-              labelText: 'Месяц листа посещаемости',
-              border: OutlineInputBorder(),
-              suffixIcon: Icon(Icons.calendar_month_rounded),
-            ),
-            items: items,
-            onChanged: cloud.isBusy
-                ? null
-                : (value) {
-                    final month = _parseMonthKey(value);
-                    if (month != null) onMonthSelected(month);
-                  },
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              FilledButton.icon(
+                onPressed: cloud.isBusy ? null : onSetup,
+                icon: const Icon(Icons.tune_rounded),
+                label: Text(
+                  mapping == null ? 'Настроить журнал' : 'Изменить настройку',
+                ),
+              ),
+              if (mapping != null)
+                TextButton(onPressed: onReset, child: const Text('Сбросить')),
+            ],
           ),
         ],
       ),
     );
-  }
-
-  DateTime? _parseMonthKey(String? value) {
-    if (value == null) return null;
-    final parts = value.split('-');
-    final year = int.tryParse(parts.isNotEmpty ? parts.first : '');
-    final month = int.tryParse(parts.length > 1 ? parts.last : '');
-    if (year == null || month == null || month < 1 || month > 12) return null;
-    return DateTime(year, month);
   }
 }
 
@@ -454,6 +454,10 @@ class _StatusCard extends StatelessWidget {
     } else if (!cloud.isSignedIn) {
       icon = Icons.login_rounded;
       title = 'Нужно войти в Google';
+      color = scheme.tertiary;
+    } else if (cloud.needsJournalSetup) {
+      icon = Icons.tune_rounded;
+      title = 'Настройте журнал';
       color = scheme.tertiary;
     } else if (cloud.isBusy) {
       icon = Icons.sync_rounded;

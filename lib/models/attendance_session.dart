@@ -191,28 +191,33 @@ class AttendanceSession {
 
   /// Синхронизирует список группы с чужим списком (например из листа
   /// месяца): новых добавляет, знакомых обновляет.
+  ///
+  /// Знакомый — совпадение по идентификатору или по ФИО. Найденного по
+  /// ФИО оставляем как есть: локальные отметки привязаны к его
+  /// идентификатору, менять его нельзя.
   AttendanceSession withRoster(Iterable<Student> roster) {
     var merged = [...students];
+    var changed = false;
     for (final student in roster) {
       if (student.fullName.isEmpty) continue;
-      final index = merged.indexWhere(
-        (item) => item.id == student.id,
-      );
-      if (index < 0) {
-        merged.add(student);
-      } else if (merged[index].fullName != student.fullName) {
-        merged[index] = student;
+      final byId = merged.indexWhere((item) => item.id == student.id);
+      if (byId >= 0) {
+        if (merged[byId].fullName != student.fullName) {
+          merged[byId] = student;
+          changed = true;
+        }
+        continue;
       }
+      final byName = merged.indexWhere(
+        (item) =>
+            item.fullName.toLowerCase() == student.fullName.toLowerCase(),
+      );
+      if (byName >= 0) continue;
+      merged.add(student);
+      changed = true;
     }
-    if (merged.length == students.length &&
-        merged.every((student) => students.any(
-          (item) => item.id == student.id && item.fullName == student.fullName,
-        ))) {
-      return this;
-    }
-    return copyWith(
-      students: List<Student>.unmodifiable(merged),
-    );
+    if (!changed) return this;
+    return copyWith(students: List<Student>.unmodifiable(merged));
   }
 
   /// Объединяет удалённые отметки с локальными (удалённые важнее).

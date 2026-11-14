@@ -375,13 +375,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     setState(() => _absentArmed = false);
   }
 
-  /// Отмеченная пара попадает в отложенное уведомление — оно уйдёт
-  /// в таблицу при следующей синхронизации, и её увидят другие.
+  /// Отмеченная пара попадает в локальные уведомления — колокольчик
+  /// покажет её на этом устройстве.
   void _queueLessonNotification() {
     final lesson = _selectedLesson;
-    final cloud = widget.cloud;
-    if (lesson == null || cloud == null) return;
-    cloud.notifications?.queueLessonMark(
+    final notifications = widget.notifications;
+    if (lesson == null || notifications == null) return;
+    notifications.queueLessonMark(
       groupName: _attendance.session.groupName,
       lesson: lesson,
       date: _day,

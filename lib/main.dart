@@ -62,7 +62,7 @@ Future<void> main() async {
       sheetsApi: GoogleSheetsApi(accessToken: auth.accessToken),
       settingsStore: SharedPreferencesCloudSettingsStore(preferences),
       isWeb: kIsWeb,
-      notifications: notifications,
+      schedule: schedule,
     );
     settings = UiSettingsController(preferences: preferences);
   } catch (error, stackTrace) {
