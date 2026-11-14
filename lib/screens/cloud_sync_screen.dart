@@ -686,6 +686,10 @@ class _OAuthConfigCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final settings = cloud.settings;
+    final ownClient =
+        (settings.clientId?.trim().isNotEmpty ?? false) ||
+        (settings.webClientId?.trim().isNotEmpty ?? false);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
@@ -701,18 +705,21 @@ class _OAuthConfigCard extends StatelessWidget {
         collapsedShape: const Border(),
         title: const Text('Настройки OAuth'),
         subtitle: Text(
-          cloud.auth.isConfigured
-              ? 'OAuth-клиент настроен'
-              : 'Нужен Client ID из Google Cloud Console',
+          !cloud.auth.isConfigured
+              ? 'Нужен Client ID из Google Cloud Console'
+              : ownClient
+              ? 'OAuth-клиент из настроек приложения'
+              : 'Встроенный OAuth-клиент сборки',
         ),
         childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const Text(
-            'Создайте OAuth-клиент в Google Cloud Console, включите Google '
-            'Sheets API. Для Android/iOS/Linux/Windows подойдёт тип '
-            '«Desktop app»; для web — «Web application». Значения можно '
-            'также задать при сборке через --dart-define.',
+            'В релизных сборках OAuth-клиент уже встроен: вход работает без '
+            'настройки. Свой клиент из Google Cloud Console нужен, если '
+            'вы хотите собственный проект и квоты. Для Android/iOS/Linux/'
+            'Windows подойдёт тип «Desktop app», для web — «Web '
+            'application».',
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(

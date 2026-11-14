@@ -1,7 +1,10 @@
-// Тесты разбора JSON-файла OAuth-клиента из Google Cloud Console.
+// Тесты разбора JSON-файла OAuth-клиента из Google Cloud Console
+// и приоритета учётных данных: настройки приложения, вшитый клиент.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:yavka/data/cloud_settings.dart';
 import 'package:yavka/services/cloud/oauth/oauth_client_json.dart';
+import 'package:yavka/services/cloud/oauth/oauth_models.dart';
 
 void main() {
   test('файл типа «Desktop app» разбирается', () {
@@ -121,5 +124,39 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('настройки приложения перекрывают вшитый OAuth-клиент', () {
+    const settings = CloudSettings(
+      clientId: 'own-id.apps.googleusercontent.com',
+      clientSecret: 'own-secret',
+    );
+
+    final config = GoogleOAuthConfig.fromSettings(settings, isWeb: false);
+
+    expect(config.clientId, 'own-id.apps.googleusercontent.com');
+    expect(config.clientSecret, 'own-secret');
+    expect(config.isConfigured, isTrue);
+  });
+
+  test('без своих настроек работает вшитый клиент сборки', () {
+    // В тестах --dart-define пуст, поэтому «вшитый» клиент отсутствует:
+    // конфигурация не задана, экран входа это покажет.
+    const settings = CloudSettings();
+
+    final config = GoogleOAuthConfig.fromSettings(settings, isWeb: false);
+
+    expect(config.isConfigured, isFalse);
+  });
+
+  test('web-клиент берётся из своих настроек или из сборки', () {
+    const settings = CloudSettings(
+      webClientId: 'web-id.apps.googleusercontent.com',
+    );
+
+    final web = GoogleOAuthConfig.fromSettings(settings, isWeb: true);
+
+    expect(web.clientId, 'web-id.apps.googleusercontent.com');
+    expect(web.isConfigured, isTrue);
   });
 }

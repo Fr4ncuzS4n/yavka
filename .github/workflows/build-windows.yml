@@ -1,4 +1,4 @@
-name: Release build (Windows)
+name: Release build
 
 on:
   release:
@@ -6,11 +6,22 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Тег релиза, куда загрузить сборку (например v1.0.0). Если пусто — последний релиз.'
+        description: 'Тег релиза, куда загрузить сборки (например v1.0.0). Если пусто — последний релиз.'
         required: false
 
 permissions:
   contents: write
+
+env:
+  # OAuth-клиент вшивается в сборку: пользователю не нужно регистрировать
+  # свой проект в Google Cloud — только нажать «Разрешить». Для installed
+  # приложений Google прямо разрешает не считать Client Secret секретом.
+  # Пустые секреты (пока они не настроены) дают сборку без клиента —
+  # тогда клиент настраивается вручную в приложении.
+  DART_DEFINES: >-
+    --dart-define=GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+    --dart-define=GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+    --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}
 
 jobs:
   windows:
@@ -26,7 +37,7 @@ jobs:
           flutter-version: 3.47.9
 
       - name: Сборка Windows
-        run: flutter build windows --release
+        run: flutter build windows --release ${{ env.DART_DEFINES }}
 
       - name: Упаковка
         shell: pwsh
@@ -42,3 +53,72 @@ jobs:
           if (-not $tag) { $tag = (gh release view --json tagName --jq .tagName) }
           Write-Host "Uploading to release $tag"
           gh release upload "$tag" 'yavka-windows-x64.zip' --clobber --repo '${{ github.repository }}'
+
+  android:
+    name: Android (APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+
+      - name: Сборка Android APK
+        run: flutter build apk --release ${{ env.DART_DEFINES }}
+
+      - name: Упаковка
+        run: cp build/app/outputs/flutter-apk/app-release.apk yavka-android.apk
+
+      - name: Загрузка в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ github.event.release.tag_name }}'
+          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
+          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
+          echo "Uploading to release $tag"
+          gh release upload "$tag" yavka-android.apk --clobber --repo '${{ github.repository }}'
+
+  linux:
+    name: Linux x64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+
+      - name: Зависимости для сборки Linux
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+
+      - name: Сборка Linux
+        run: flutter build linux --release ${{ env.DART_DEFINES }}
+
+      - name: Упаковка
+        run: |
+          cd build/linux/x64/release/bundle
+          zip -qr "$GITHUB_WORKSPACE/yavka-linux-x64.zip" .
+
+      - name: Загрузка в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ github.event.release.tag_name }}'
+          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
+          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
+          echo "Uploading to release $tag"
+          gh release upload "$tag" yavka-linux-x64.zip --clobber --repo '${{ github.repository }}'
