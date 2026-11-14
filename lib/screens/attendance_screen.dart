@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
-<<<<<<< HEAD
-import '../data/ui_settings.dart';
-=======
 import '../data/notification_controller.dart';
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+import '../data/ui_settings.dart';
 import '../models/attendance_entry.dart';
 import '../models/attendance_status.dart';
 import '../models/schedule_lesson.dart';
@@ -13,12 +10,10 @@ import '../models/student.dart';
 import '../services/cloud/cloud_sync_controller.dart';
 import '../theme/app_theme.dart';
 import '../theme/status_style.dart';
+import '../util/desktop_layout.dart';
 import 'cloud_sync_screen.dart';
-<<<<<<< HEAD
-import 'settings_screen.dart';
-=======
 import 'notifications_screen.dart';
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+import 'settings_screen.dart';
 
 /// Ключ списка группы (используется в тестах).
 const kStudentListKey = Key('student-list');
@@ -26,6 +21,10 @@ const kStudentListKey = Key('student-list');
 const _kRowRadius = 16.0;
 const _kButtonRadius = 14.0;
 const _kGap = 12.0;
+const _kPanelWidth = 320.0;
+
+/// Ключ панели кнопок отметки на десктопе (используется в тестах).
+const kMarkingPanelKey = Key('marking-panel');
 
 /// Экран отметки посещаемости группы.
 ///
@@ -41,12 +40,9 @@ class AttendanceScreen extends StatefulWidget {
     super.key,
     this.attendance,
     this.cloud,
-<<<<<<< HEAD
     this.uiSettings,
-=======
     this.lesson,
     this.notifications,
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   });
 
   /// Состояние посещаемости. Если не передано — создаётся пример группы
@@ -56,17 +52,15 @@ class AttendanceScreen extends StatefulWidget {
   /// Облачная синхронизация. Если `null`, кнопка Google Диска не показывается.
   final CloudSyncController? cloud;
 
-<<<<<<< HEAD
   /// Выборный дизайн («Настройки → Дизайн»). Если `null`, кнопка
   /// с шестерёнкой скрывается.
   final UiSettingsController? uiSettings;
-=======
+
   /// Пара из расписания: отметки будут привязаны к ней.
   final ScheduleLesson? lesson;
 
   /// Уведомления о отметках других пользователей таблицы.
   final NotificationController? notifications;
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -124,7 +118,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _multiSelect ? _selectedIds.isNotEmpty : _selectedStudent != null;
 
   bool get _anyTargetMarked =>
-      _targets.any((student) => _attendance.entryFor(student.id) != null);
+      _targets.any((student) => _entryFor(student) != null);
 
   void _select(Student student) {
     if (_multiSelect) {
@@ -177,26 +171,20 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _mark(AttendanceStatus status) {
-<<<<<<< HEAD
     final targets = _targets;
     if (targets.isEmpty) return;
     final now = DateTime.now();
-    for (final student in targets) {
-      _attendance.mark(student, status, now);
-    }
-=======
-    final student = _selectedStudent;
-    if (student == null) return;
     final lesson = widget.lesson;
-    _attendance.mark(
-      student,
-      status,
-      DateTime.now(),
-      lessonKey: lesson?.id,
-      lessonTitle: lesson?.subject,
-    );
+    for (final student in targets) {
+      _attendance.mark(
+        student,
+        status,
+        now,
+        lessonKey: lesson?.id,
+        lessonTitle: lesson?.subject,
+      );
+    }
     _queueLessonNotification();
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     setState(() => _absentArmed = false);
   }
 
@@ -223,14 +211,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (!mounted) return;
 
     final time = pickedTime ?? TimeOfDay.fromDateTime(now);
-<<<<<<< HEAD
+    final lesson = widget.lesson;
     for (final student in targets) {
       _attendance.mark(
         student,
         AttendanceStatus.absent,
         DateTime(now.year, now.month, now.day, time.hour, time.minute),
+        lessonKey: lesson?.id,
+        lessonTitle: lesson?.subject,
       );
     }
+    _queueLessonNotification();
     setState(() => _absentArmed = false);
   }
 
@@ -241,17 +232,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     for (final student in targets) {
       _attendance.clearMark(student);
     }
-=======
-    final lesson = widget.lesson;
-    _attendance.mark(
-      student,
-      AttendanceStatus.absent,
-      DateTime(now.year, now.month, now.day, time.hour, time.minute),
-      lessonKey: lesson?.id,
-      lessonTitle: lesson?.subject,
-    );
-    _queueLessonNotification();
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     setState(() => _absentArmed = false);
   }
 
@@ -295,7 +275,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         title: _buildTitle(context),
         actions: [
-<<<<<<< HEAD
           IconButton(
             tooltip: _multiSelect
                 ? 'Выйти из множественного выбора'
@@ -305,10 +284,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
             onPressed: _toggleMultiSelect,
           ),
-=======
           if (widget.notifications != null)
             NotificationBell(notifications: widget.notifications!),
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
           if (widget.cloud != null) _buildCloudAction(context),
           if (widget.uiSettings != null)
             IconButton(
@@ -320,13 +297,121 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          children: [
-            Expanded(child: _buildList()),
-            _buildPanel(),
-          ],
-        ),
+        child: isDesktopLayout()
+            ? _buildDesktopBody()
+            : Column(
+                children: [
+                  Expanded(child: _buildList()),
+                  _buildPanel(),
+                ],
+              ),
       ),
+    );
+  }
+
+  /// Десктопная раскладка (Windows/Linux/macOS):
+  /// слева — панель кнопок отметки, справа — список группы.
+  Widget _buildDesktopBody() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isLight = scheme.brightness == Brightness.light;
+    final canMark = _canMark;
+    final anyMarked = _anyTargetMarked;
+    final single = _multiSelect ? null : _selectedStudent;
+
+    final headerText = _multiSelect
+        ? (_selectedIds.isEmpty
+            ? 'Выберите студентов'
+            : 'Выбрано: ${_selectedIds.length}')
+        : (single == null
+            ? 'Выберите студента'
+            : 'Отметить: ${single.fullName}');
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Левая колонка — заголовок, режимы и 4 кнопки отметки.
+        Container(
+          key: kMarkingPanelKey,
+          width: _kPanelWidth,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          decoration: BoxDecoration(
+            border: Border(
+              right: BorderSide(
+                color: isLight ? AppPalette.line : AppPalette.lineDark,
+              ),
+            ),
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  headerText,
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    color: canMark ? null : scheme.onSurfaceVariant,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (anyMarked) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _clearMarks,
+                      icon: const Icon(Icons.undo, size: 18),
+                      label: const Text('Отменить отметку'),
+                    ),
+                  ),
+                ],
+                if (_multiSelect) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: _selectAll,
+                          icon: const Icon(Icons.select_all, size: 18),
+                          label: const Text('Выбрать всех'),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed:
+                              _selectedIds.isEmpty ? null : _clearSelection,
+                          icon: const Icon(Icons.close, size: 18),
+                          label: const Text('Снять выбор'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                if (_absentArmed) ...[
+                  const SizedBox(height: 8),
+                  const _ArmedHint(),
+                ],
+                const SizedBox(height: 12),
+                for (final (index, status)
+                    in AttendanceStatus.values.indexed) ...[
+                  if (index > 0) const SizedBox(height: _kGap),
+                  _StatusButton(
+                    status: status,
+                    enabled: canMark,
+                    armed:
+                        status == AttendanceStatus.absent && _absentArmed,
+                    onTap: status == AttendanceStatus.absent
+                        ? _markAbsent
+                        : () => _mark(status),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        // Правая колонка — список студентов.
+        Expanded(child: _buildList()),
+      ],
     );
   }
 
@@ -437,16 +522,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               _StudentRow(
                 key: ValueKey('student-${students[i].id}'),
                 student: students[i],
-<<<<<<< HEAD
-                entry: _attendance.entryFor(students[i].id),
+                entry: _entryFor(students[i]),
                 selected: _multiSelect
                     ? _selectedIds.contains(students[i].id)
                     : _selectedStudentId == students[i].id,
                 multiSelect: _multiSelect,
-=======
-                entry: _entryFor(students[i]),
-                selected: _selectedStudentId == students[i].id,
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
                 onTap: () => _select(students[i]),
               ),
             ],

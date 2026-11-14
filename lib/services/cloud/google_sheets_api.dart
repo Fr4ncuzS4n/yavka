@@ -250,6 +250,74 @@ class GoogleSheetsApi implements SheetsApi {
     );
   }
 
+  @override
+  Future<List<List<Object?>>> getValues(
+    String spreadsheetId,
+    String range,
+  ) async {
+    final response = await _send(
+      'GET',
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
+          '/values/${Uri.encodeComponent(range)}',
+      query: {
+        'valueRenderOption': 'UNFORMATTED_VALUE',
+        'majorDimension': 'ROWS',
+      },
+    );
+    final json = _decode(response);
+    final values = json['values'];
+    if (values is! List) return const [];
+    return [
+      for (final row in values)
+        if (row is List) [for (final cell in row) cell as Object?],
+    ];
+  }
+
+  @override
+  Future<void> updateValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  ) async {
+    await _send(
+      'PUT',
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
+          '/values/${Uri.encodeComponent(range)}',
+      query: {'valueInputOption': 'RAW'},
+      body: {'range': range, 'majorDimension': 'ROWS', 'values': values},
+    );
+  }
+
+  @override
+  Future<void> appendValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  ) async {
+    await _send(
+      'POST',
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}'
+          '/values/${Uri.encodeComponent(range)}:append',
+      query: {'valueInputOption': 'RAW', 'insertDataOption': 'INSERT_ROWS'},
+      body: {'range': range, 'majorDimension': 'ROWS', 'values': values},
+    );
+  }
+
+  @override
+  Future<void> batchUpdateValues(
+    String spreadsheetId,
+    List<SheetValueRange> data,
+  ) async {
+    await _send(
+      'POST',
+      '/spreadsheets/${Uri.encodeComponent(spreadsheetId)}/values:batchUpdate',
+      body: {
+        'valueInputOption': 'RAW',
+        'data': [for (final item in data) item.toJson()],
+      },
+    );
+  }
+
   Future<http.Response> _send(
     String method,
     String path, {

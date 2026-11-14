@@ -4,8 +4,10 @@ import '../../models/attendance_entry.dart';
 import '../../models/attendance_session.dart';
 import '../../models/attendance_status.dart';
 import '../../models/student.dart';
+import '../../models/sync_notification.dart';
 import 'cloud_exceptions.dart';
 import 'month_grid_codec.dart';
+import 'notifications_sheet_codec.dart';
 import 'sheets_api.dart';
 
 /// Результат отправки отметок в лист месяца.
@@ -251,6 +253,67 @@ class MonthGridSyncService {
     final grid = await _api.getSheetGrid(spreadsheetId, title);
     if (grid == null) return null;
     return decode(grid, month);
+  }
+
+  /// Отправляет уведомления о отметках на парах в лист «Уведомления».
+  ///
+  /// Все, кто пользуется этой таблицей, увидят их при следующей загрузке.
+  Future<void> pushNotifications({
+    required String spreadsheetId,
+    required List<SyncNotification> notifications,
+  }) async {
+    if (notifications.isEmpty) return;
+
+    final title = SheetNotificationsCodec.sheetTitle;
+    final meta = await _api.getSpreadsheet(spreadsheetId);
+    if (!meta.hasTab(title)) {
+      await _api.addSheet(spreadsheetId, title);
+    }
+
+    final values = await _api.getValues(
+      spreadsheetId,
+      SheetNotificationsCodec.sheetRange(title),
+    );
+    if (values.isEmpty) {
+      await _api.updateValues(spreadsheetId, "'$title'!A1:F1", [
+        SheetNotificationsCodec.header,
+      ]);
+    }
+
+    await _api.appendValues(
+      spreadsheetId,
+      SheetNotificationsCodec.sheetRange(title),
+      [
+        for (final notification in notifications)
+          SheetNotificationsCodec.encode(notification),
+      ],
+    );
+  }
+
+  /// Читает уведомления из листа «Уведомления».
+  ///
+  /// Если указана [groupName] — остаются уведомления только этой группы.
+  Future<List<SyncNotification>> pullNotifications({
+    required String spreadsheetId,
+    String? groupName,
+  }) async {
+    final title = SheetNotificationsCodec.sheetTitle;
+    final meta = await _api.getSpreadsheet(spreadsheetId);
+    if (!meta.hasTab(title)) return const [];
+
+    final values = await _api.getValues(
+      spreadsheetId,
+      SheetNotificationsCodec.sheetRange(title),
+    );
+
+    final notifications = <SyncNotification>[];
+    for (final row in values) {
+      final notification = SheetNotificationsCodec.decode(row);
+      if (notification == null) continue;
+      if (groupName != null && notification.groupName != groupName) continue;
+      notifications.add(notification);
+    }
+    return notifications;
   }
 
   /// Разбирает сетку листа в студентов, отметки и блоки дней.

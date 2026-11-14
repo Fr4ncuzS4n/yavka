@@ -194,7 +194,6 @@ class FakeSheetsApi implements SheetsApi {
     }
   }
 
-<<<<<<< HEAD
   GoogleApiException _invalidArgument(String detail) => GoogleApiException(
     'request contains an invalid argument. $detail',
     statusCode: 400,
@@ -350,6 +349,88 @@ class FakeSheetsApi implements SheetsApi {
     return Future<int>.value(_ensure(title).id);
   }
 
+  // -- Значения ячеек (лист «Уведомления» и подобные) ------------------------
+
+  final Map<String, List<List<Object?>>> _values = {};
+  bool failAppend = false;
+  bool failUpdate = false;
+
+  List<List<Object?>> rowsFor(String tab) => _values[tab] ?? const [];
+
+  void setRows(String tab, List<List<Object?>> rows) {
+    _ensure(tab);
+    _values[tab] = [
+      for (final row in rows) [...row],
+    ];
+  }
+
+  @override
+  Future<List<List<Object?>>> getValues(
+    String spreadsheetId,
+    String range,
+  ) async {
+    if (failGet) throw const GooglePermissionException();
+    return [
+      for (final row in rowsFor(_tabFromRange(range))) [...row],
+    ];
+  }
+
+  @override
+  Future<void> updateValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  ) async {
+    if (failUpdate) throw const GooglePermissionException();
+    final tab = _tabFromRange(range);
+    final rowNumber = _rowFromRange(range);
+    final rows = _values.putIfAbsent(tab, () => []);
+    while (rows.length < rowNumber) {
+      rows.add(<Object?>[]);
+    }
+    rows[rowNumber - 1] = [...values.first];
+  }
+
+  @override
+  Future<void> appendValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  ) async {
+    if (failAppend) throw const GooglePermissionException();
+    final rows = _values.putIfAbsent(_tabFromRange(range), () => []);
+    rows.addAll([
+      for (final row in values) [...row],
+    ]);
+  }
+
+  String _tabFromRange(String range) {
+    final match = RegExp(r"^'([^']+)'!").firstMatch(range);
+    return match?.group(1) ?? range.split('!').first;
+  }
+
+  @override
+  Future<void> batchUpdateValues(
+    String spreadsheetId,
+    List<SheetValueRange> data,
+  ) async {
+    if (failUpdate) throw const GooglePermissionException();
+    for (final item in data) {
+      final tab = _tabFromRange(item.range);
+      final rowNumber = _rowFromRange(item.range);
+      final rows = _values.putIfAbsent(tab, () => []);
+      while (rows.length < rowNumber) {
+        rows.add(<Object?>[]);
+      }
+      rows[rowNumber - 1] = [...item.values.first];
+    }
+  }
+
+  int _rowFromRange(String range) {
+    final match = RegExp(r'!A(\d+):[A-Z]+\d*$').firstMatch(range);
+    return int.parse(match?.group(1) ?? '1');
+  }
+
   /// Имя единственного листа — удобно в тестах.
   String get onlyTitle => _sheets.keys.isEmpty ? '' : _sheets.keys.first;
 }
@@ -459,10 +540,5 @@ class _FakeSheet {
     final blue = channel(raw['blue']);
     if (red > 245 && green > 245 && blue > 245) return null;
     return red << 16 | green << 8 | blue;
-=======
-  int _rowFromRange(String range) {
-    final match = RegExp(r'!A(\d+):[A-Z]+\d*$').firstMatch(range);
-    return int.parse(match?.group(1) ?? '1');
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   }
 }

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../data/attendance_controller.dart';
 import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
+import '../data/ui_settings.dart';
 import '../services/cloud/cloud_sync_controller.dart';
 import 'attendance_screen.dart';
 import 'schedule_screen.dart';
@@ -15,12 +16,16 @@ class HomeShell extends StatefulWidget {
     this.cloud,
     this.schedule,
     this.notifications,
+    this.uiSettings,
   });
 
   final AttendanceController? attendance;
   final CloudSyncController? cloud;
   final ScheduleController? schedule;
   final NotificationController? notifications;
+
+  /// Выборный дизайн («Настройки → Дизайн»).
+  final UiSettingsController? uiSettings;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -54,6 +59,7 @@ class _HomeShellState extends State<HomeShell> {
             attendance: _attendance,
             cloud: widget.cloud,
             notifications: _notifications,
+            uiSettings: widget.uiSettings,
           ),
           ScheduleScreen(
             schedule: _schedule,

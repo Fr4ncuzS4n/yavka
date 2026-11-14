@@ -8,14 +8,11 @@ import 'data/attendance_controller.dart';
 import 'data/attendance_store.dart';
 import 'data/cloud_settings.dart';
 import 'data/example_group.dart';
-<<<<<<< HEAD
-import 'data/ui_settings.dart';
-=======
 import 'data/notification_controller.dart';
 import 'data/notification_store.dart';
 import 'data/schedule_controller.dart';
 import 'data/schedule_store.dart';
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+import 'data/ui_settings.dart';
 import 'models/attendance_session.dart';
 import 'screens/home_shell.dart';
 import 'services/cloud/cloud_sync_controller.dart';
@@ -77,18 +74,12 @@ Future<void> main() async {
   }
 
   runApp(
-<<<<<<< HEAD
     AppRoot(
-      attendance: attendance,
-      cloud: cloud,
-      settings: settings,
-=======
-    MyApp(
       attendance: attendance,
       schedule: schedule,
       notifications: notifications,
       cloud: cloud,
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+      settings: settings,
     ),
   );
 
@@ -97,22 +88,14 @@ Future<void> main() async {
   }
 }
 
-<<<<<<< HEAD
 class AppRoot extends StatelessWidget {
   const AppRoot({
-    super.key,
-    this.attendance,
-    this.cloud,
-    this.settings,
-=======
-class MyApp extends StatelessWidget {
-  const MyApp({
     super.key,
     this.attendance,
     this.schedule,
     this.notifications,
     this.cloud,
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+    this.settings,
   });
 
   final AttendanceController? attendance;
@@ -123,7 +106,6 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-<<<<<<< HEAD
     if (settings == null) {
       return MaterialApp(
         title: 'Явка',
@@ -131,7 +113,12 @@ class MyApp extends StatelessWidget {
         theme: AppTheme.light(),
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
-        home: AttendanceScreen(attendance: attendance, cloud: cloud),
+        home: HomeShell(
+          attendance: attendance,
+          schedule: schedule,
+          notifications: notifications,
+          cloud: cloud,
+        ),
       );
     }
 
@@ -145,27 +132,15 @@ class MyApp extends StatelessWidget {
           theme: AppTheme.light(controller.accent),
           darkTheme: AppTheme.dark(controller.accent),
           themeMode: controller.themeMode,
-          home: AttendanceScreen(
+          home: HomeShell(
             attendance: attendance,
+            schedule: schedule,
+            notifications: notifications,
             cloud: cloud,
             uiSettings: controller,
           ),
         );
       },
-=======
-    return MaterialApp(
-      title: 'Явка',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      themeMode: ThemeMode.system,
-      home: HomeShell(
-        attendance: attendance,
-        schedule: schedule,
-        notifications: notifications,
-        cloud: cloud,
-      ),
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     );
   }
 }

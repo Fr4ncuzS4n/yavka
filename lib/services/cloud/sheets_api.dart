@@ -12,12 +12,45 @@ abstract interface class SheetsApi {
   /// Сетка листа: значения, заливки и объединения. `null`, если листа нет.
   Future<SheetGrid?> getSheetGrid(String spreadsheetId, String sheetTitle);
 
+  /// Значения ячеек в A1-нотации (лист «Уведомления» и подобные).
+  Future<List<List<Object?>>> getValues(String spreadsheetId, String range);
+
+  /// Записывает значения в начало диапазона в A1-нотации.
+  Future<void> updateValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  );
+
+  /// Дописывает строки в конец диапазона в A1-нотации.
+  Future<void> appendValues(
+    String spreadsheetId,
+    String range,
+    List<List<Object?>> values,
+  );
+
+  /// Пакетно записывает значения по нескольким диапазонам.
+  Future<void> batchUpdateValues(
+    String spreadsheetId,
+    List<SheetValueRange> data,
+  );
+
   /// Прямые запросы к `spreadsheets/{id}:batchUpdate` — заливки,
   /// объединения, ширины колонок, значения ячеек.
   Future<void> batchUpdate(
     String spreadsheetId,
     List<Map<String, Object?>> requests,
   );
+}
+
+/// Диапазон и значения для пакетного обновления.
+class SheetValueRange {
+  const SheetValueRange({required this.range, required this.values});
+
+  final String range;
+  final List<List<Object?>> values;
+
+  Map<String, Object?> toJson() => {'range': range, 'values': values};
 }
 
 /// Метаданные таблицы.

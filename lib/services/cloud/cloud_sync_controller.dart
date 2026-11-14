@@ -6,13 +6,10 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/attendance_controller.dart';
 import '../../data/cloud_settings.dart';
-<<<<<<< HEAD
+import '../../data/notification_controller.dart';
 import '../../models/attendance_session.dart';
 import '../../models/student.dart';
-=======
-import '../../data/notification_controller.dart';
 import '../../models/sync_notification.dart';
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 import 'cloud_exceptions.dart';
 import 'google_auth_service.dart';
 import 'month_grid_sync_service.dart';
@@ -35,12 +32,8 @@ class CloudSyncController extends ChangeNotifier {
   }) : _api = sheetsApi,
        _settingsStore = settingsStore,
        _isWeb = isWeb,
-<<<<<<< HEAD
-       _sync = MonthGridSyncService(sheetsApi) {
-=======
        _notifications = notifications,
-       _sync = GoogleSheetsSyncService(sheetsApi) {
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
+       _sync = MonthGridSyncService(sheetsApi) {
     attendance.addListener(_onAttendanceChanged);
     auth.addListener(_onAuthChanged);
   }
@@ -49,12 +42,8 @@ class CloudSyncController extends ChangeNotifier {
   final GoogleAuthService auth;
   final SheetsApi _api;
   final CloudSettingsStore _settingsStore;
-<<<<<<< HEAD
   final MonthGridSyncService _sync;
-=======
-  final GoogleSheetsSyncService _sync;
   final NotificationController? _notifications;
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   final bool _isWeb;
 
   CloudSettings _settings = const CloudSettings();
@@ -92,7 +81,6 @@ class CloudSyncController extends ChangeNotifier {
 
   bool get autoSync => _settings.autoSync;
 
-<<<<<<< HEAD
   /// Месяц, с которым работает синхронизация.
   DateTime get selectedMonth => _selectedMonth;
 
@@ -102,7 +90,7 @@ class CloudSyncController extends ChangeNotifier {
 
   bool _hasAutoSyncInvolved() =>
       isConfigured && isSignedIn && autoSync;
-=======
+
   /// Уведомления о отметках на парах (если переданы при создании).
   NotificationController? get notifications => _notifications;
 
@@ -123,7 +111,6 @@ class CloudSyncController extends ChangeNotifier {
       notifyListeners();
     }
   }
->>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 
   /// Загружает настройки, восстанавливает вход и (если включена
   /// автосинхронизация) подтягивает отметки из таблицы.
