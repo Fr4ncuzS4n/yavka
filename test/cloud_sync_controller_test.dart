@@ -1,5 +1,6 @@
-// Тесты облачного контроллера: таблица не меняется, приложение
-// подстраивается под журнал, месяц подбирается из названия таблицы.
+// Тесты облачного контроллера: приложение правит в таблице только
+// ячейки отметок, список группы подстраивается под журнал, отметки
+// приложения сильнее табличных, месяц подбирается из названия таблицы.
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:yavka/data/attendance_controller.dart';
@@ -279,13 +280,8 @@ void main() {
     expect(env.cloud.lastResult?.skippedNote, contains('9'));
   });
 
-  test('загрузка с Диска обновляет локальные отметки по ФИО', () async {
-    final env = build(entries: {
-      '1': AttendanceEntry(
-        status: AttendanceStatus.came,
-        markedAt: DateTime(2026, 11, 9, 9),
-      ),
-    });
+  test('таблица дополняет пробелы: отметки листа приходят на пары', () async {
+    final env = build();
     await connectJournal(
       env.cloud,
       env.api,
@@ -317,6 +313,51 @@ void main() {
     expect(pulled?.status, AttendanceStatus.late);
     expect(pulled?.markedAt, DateTime(2026, 11, 9, 9, 40));
     // Список группы подтянулся по ФИО.
+    expect(
+      env.attendance.students.map((student) => student.fullName),
+      contains(maria.fullName),
+    );
+  });
+
+  test('отметки приложения не затираются таблицей', () async {
+    // Локально Алексей уже отмечен на весь день, таблица по нему
+    // противоречит: опоздал к 9:40 на первую пару.
+    final env = build(entries: {
+      '1': AttendanceEntry(
+        status: AttendanceStatus.came,
+        markedAt: DateTime(2026, 11, 9, 9),
+      ),
+    });
+    await connectJournal(
+      env.cloud,
+      env.api,
+      marks: {
+        9: {
+          'Алексей Морозов': {
+            1: AttendanceEntry(
+              status: AttendanceStatus.late,
+              markedAt: DateTime(2026, 11, 9, 9, 40),
+            ),
+          },
+        },
+      },
+    );
+
+    await env.cloud.saveJournalMapping(
+      const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+      ),
+    );
+
+    expect(env.cloud.error, isNull);
+    // Дневная отметка приложения осталась, табличная не применилась.
+    expect(env.attendance.entryFor('1')?.status, AttendanceStatus.came);
+    expect(env.attendance.entryInLesson('1', lessonKey: 'mon-1'), isNull);
+    // Студент остался со своим идентификатором и списком группы.
+    expect(env.attendance.students.first.id, '1');
     expect(
       env.attendance.students.map((student) => student.fullName),
       contains(maria.fullName),

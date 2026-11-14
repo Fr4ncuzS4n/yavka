@@ -318,6 +318,13 @@ class AttendanceSession {
   ///
   /// Неизвестные студенты добавляются в список группы — так таблица может
   /// пополняться с другого устройства.
+  /// Вливает отметки из журнала, не перекрывая отметки приложения.
+  ///
+  /// Отметка из таблицы применяется только там, где в приложении ещё
+  /// ничего нет. Дневная отметка студента закрывает весь день (именно
+  /// так она и раскладывается в таблицу при записи), отметка на паре —
+  /// свою пару: табличные данные лишь дополняют пробелы. Новых
+  /// студентов добавляем, ФИО знакомых обновляем.
   AttendanceSession mergeRemote(Iterable<AttendanceRecord> remote) {
     final mergedStudents = [...students];
     final mergedEntries = {...entries};
@@ -334,6 +341,7 @@ class AttendanceSession {
           mergedStudents[index] = record.student;
         }
       }
+      if (_coveredByLocalMark(record)) continue;
       mergedEntries[entryKey(
         studentId: record.student.id,
         lessonKey: record.entry.lessonKey,
@@ -345,6 +353,21 @@ class AttendanceSession {
       students: List<Student>.unmodifiable(mergedStudents),
       entries: mergedEntries,
     );
+  }
+
+  /// Закрыт ли слот табличной отметки уже отмеченным студентом.
+  ///
+  /// Дневная отметка студента означает отметку на все пары дня, поэтому
+  /// она закрывает студента целиком; отметка на паре закрывает только
+  /// свою пару.
+  bool _coveredByLocalMark(AttendanceRecord record) {
+    if (entries.containsKey(record.student.id)) return true;
+    final key = entryKey(
+      studentId: record.student.id,
+      lessonKey: record.entry.lessonKey,
+      lessonTitle: record.entry.lessonTitle,
+    );
+    return entries.containsKey(key);
   }
 
   Map<String, Object?> toJson() => {

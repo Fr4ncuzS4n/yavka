@@ -170,8 +170,7 @@ void main() {
     expect(session.entries.keys, contains('1'));
   });
 
-  test('отметки с парами, загруженные из таблицы, не затирают отметки дня',
-      () {
+  test('дневная отметка приложения сильнее отметок пар из таблицы', () {
     final session = AttendanceSession(
       groupName: 'БИТ-24-03',
       date: DateTime(2026, 11, 13),
@@ -198,12 +197,142 @@ void main() {
       ),
     ]);
 
-    // Отметка на весь день и отметка на паре живут в одной сессии.
+    // Приложение отметило студента на весь день — таблица ему ничего
+    // не добавляет, дневная отметка остаётся прежней.
     expect(merged.entryFor('1')?.status, AttendanceStatus.late);
+    expect(merged.entryInLesson('1', lessonTitle: 'Математика'), isNull);
+  });
+
+  test('отметка пары приложения сильнее отметки той же пары из таблицы',
+      () {
+    final session = AttendanceSession(
+      groupName: 'БИТ-24-03',
+      date: DateTime(2026, 11, 13),
+      students: students,
+      entries: {
+        '1|mon-1': AttendanceEntry(
+          status: AttendanceStatus.late,
+          markedAt: DateTime(2026, 11, 13, 9, 15),
+          lessonKey: 'mon-1',
+          lessonTitle: 'Математика',
+        ),
+      },
+    );
+
+    final merged = session.mergeRemote([
+      AttendanceRecord(
+        groupName: 'БИТ-24-03',
+        date: DateTime(2026, 11, 13),
+        student: students[0],
+        entry: AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 13, 9),
+          lessonKey: 'mon-1',
+          lessonTitle: 'Математика',
+        ),
+      ),
+    ]);
+
+    // Локальное опоздание с временем не затёрлось табличным «пришёл».
+    final kept = merged.entryInLesson('1', lessonKey: 'mon-1');
+    expect(kept?.status, AttendanceStatus.late);
+    expect(kept?.markedAt, DateTime(2026, 11, 13, 9, 15));
+  });
+
+  test('таблица дополняет пробелы: незамеченные студенты и пары', () {
+    final session = AttendanceSession(
+      groupName: 'БИТ-24-03',
+      date: DateTime(2026, 11, 13),
+      students: students,
+      // Алексей отмечен только на первой паре, Мария не отмечена вовсе.
+      entries: {
+        '1|mon-1': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 13, 9),
+          lessonKey: 'mon-1',
+          lessonTitle: 'Математика',
+        ),
+      },
+    );
+
+    AttendanceRecord record(Student student, AttendanceEntry entry) =>
+        AttendanceRecord(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 13),
+          student: student,
+          entry: entry,
+        );
+
+    final merged = session.mergeRemote([
+      // Пара 1 Алексея уже отмечена в приложении — таблица не трогает.
+      record(
+        students[0],
+        AttendanceEntry(
+          status: AttendanceStatus.absent,
+          markedAt: DateTime(2026, 11, 13, 9),
+          lessonKey: 'mon-1',
+          lessonTitle: 'Математика',
+        ),
+      ),
+      // Пара 2 в приложении пуста — приходит из таблицы.
+      record(
+        students[0],
+        AttendanceEntry(
+          status: AttendanceStatus.late,
+          markedAt: DateTime(2026, 11, 13, 9, 40),
+          lessonKey: 'mon-2',
+          lessonTitle: 'История',
+        ),
+      ),
+      // Мария не отмечена вовсе — вся приходит из таблицы.
+      record(
+        students[1],
+        AttendanceEntry(
+          status: AttendanceStatus.excused,
+          markedAt: DateTime(2026, 11, 13, 9),
+          lessonKey: 'mon-1',
+          lessonTitle: 'Математика',
+        ),
+      ),
+    ]);
+
     expect(
-      merged
-          .entryInLesson('1', lessonTitle: 'Математика')
-          ?.status,
+      merged.entryInLesson('1', lessonKey: 'mon-1')?.status,
+      AttendanceStatus.came,
+    );
+    final fromTable = merged.entryInLesson('1', lessonKey: 'mon-2');
+    expect(fromTable?.status, AttendanceStatus.late);
+    expect(fromTable?.markedAt, DateTime(2026, 11, 13, 9, 40));
+    expect(
+      merged.entryInLesson('2', lessonKey: 'mon-1')?.status,
+      AttendanceStatus.excused,
+    );
+  });
+
+  test('новый студент из таблицы попадает в список вместе с отметками', () {
+    final session = AttendanceSession(
+      groupName: 'БИТ-24-03',
+      date: DateTime(2026, 11, 13),
+      students: students,
+    );
+    const newcomer = Student(id: 'Пётр Новый', fullName: 'Пётр Новый');
+
+    final merged = session.mergeRemote([
+      AttendanceRecord(
+        groupName: 'БИТ-24-03',
+        date: DateTime(2026, 11, 13),
+        student: newcomer,
+        entry: AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 13, 9),
+          lessonTitle: 'Математика',
+        ),
+      ),
+    ]);
+
+    expect(merged.students.map((s) => s.id), contains('Пётр Новый'));
+    expect(
+      merged.entryInLesson('Пётр Новый', lessonTitle: 'Математика')?.status,
       AttendanceStatus.came,
     );
   });
