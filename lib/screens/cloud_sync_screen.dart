@@ -1,5 +1,6 @@
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/cloud/cloud_sync_controller.dart';
@@ -136,7 +137,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     } catch (error) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Не удалось открыть выбор файла: $error'),
+          content: Text(_filePickerErrorText(error)),
           backgroundColor: errorColor,
         ),
       );
@@ -171,6 +172,19 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
         ),
       );
     }
+  }
+
+  /// Текст ошибки открытия выбора файла: у channel-error и
+  /// missing-plugin причина одна — запущенный бинарник собран до
+  /// добавления плагина, native-часть грузится только при старте.
+  String _filePickerErrorText(Object error) {
+    if (error is PlatformException &&
+        (error.code == 'channel-error' || error.code == 'missing-plugin')) {
+      return 'Выбор файла не встроен в запущенную сборку. Полностью '
+          'остановите приложение и запустите заново (flutter run) — '
+          'native-часть плагина подключается при сборке.';
+    }
+    return 'Не удалось открыть выбор файла: $error';
   }
 
   @override
