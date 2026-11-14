@@ -89,7 +89,7 @@ void main() {
     );
   });
 
-  testWidgets('«Непришёл» требует подтверждения и выбора времени', (
+  testWidgets('«Непришёл» требует подтверждения, но времени у него нет', (
     WidgetTester tester,
   ) async {
     await _pumpApp(tester);
@@ -97,18 +97,10 @@ void main() {
     // Первое нажатие — предупреждение.
     await tester.tap(find.text('Непришёл'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Второе нажатие: выберите время или используйте текущее.'),
-      findsOneWidget,
-    );
-    expect(find.byType(TimePickerDialog), findsNothing);
+    expect(find.text('Второе нажатие подтвердит отсутствие.'), findsOneWidget);
 
-    // Второе нажатие — диалог времени.
+    // Второе нажатие отмечает сразу: диалога времени у «Непришёл» нет.
     await tester.tap(find.text('Непришёл'));
-    await tester.pumpAndSettle();
-    expect(find.byType(TimePickerDialog), findsOneWidget);
-
-    await tester.tap(find.text('OK'));
     await tester.pumpAndSettle();
 
     expect(find.byType(TimePickerDialog), findsNothing);

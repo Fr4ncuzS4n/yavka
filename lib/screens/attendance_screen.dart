@@ -32,8 +32,8 @@ const kMarkingPanelKey = Key('marking-panel');
 ///
 /// Староста (или куратор) выбирает студента в списке и отмечает его
 /// одной из 4 кнопок: «Пришёл», «Непришёл», «Опоздал», «По уважительной».
-/// «Непришёл» подтверждается вторым нажатием с выбором времени
-/// (по умолчанию — текущее).
+/// «Непришёл» подтверждается вторым нажатием. Время пишется только у
+/// «Опоздал» — оно уходит в журнал; у «Пришёл» и «Непришёл» времени нет.
 ///
 /// Над списком выбираются день и пара: отметки пишутся за выбранный день
 /// (по умолчанию — сегодня, задним числом тоже можно) и, если выбрана
@@ -332,32 +332,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       return;
     }
 
-    // Кого отмечаем — фиксируем до открытия диалога времени.
-    final targets = _targets;
-    if (targets.isEmpty) return;
-
-    // Подтверждение отсутствия: выбираем время (по умолчанию — текущее).
-    final now = DateTime.now();
-    final pickedTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(now),
-    );
-
-    if (!mounted) return;
-
-    final time = pickedTime ?? TimeOfDay.fromDateTime(now);
-    final lesson = _selectedLesson;
-    for (final student in targets) {
-      _attendance.mark(
-        student,
-        AttendanceStatus.absent,
-        DateTime(_day.year, _day.month, _day.day, time.hour, time.minute),
-        lessonKey: lesson?.id,
-        lessonTitle: lesson?.subject,
-      );
-    }
-    _queueLessonNotification();
-    setState(() => _absentArmed = false);
+    // Времени у «не пришёл» нет: в журнал идёт только красная ячейка
+    // с буквой «Н». Важен сам факт отсутствия.
+    _mark(AttendanceStatus.absent);
   }
 
   /// Отмена отметки у всех выбранных студентов.
@@ -1026,6 +1003,11 @@ class _StudentRow extends StatelessWidget {
 
   String? get _subtitle {
     if (entry == null) return 'нет отметки';
+    // Время важно только у опоздания — оно уходит в журнал. У «пришёл»,
+    // «не пришёл» и «по уважительной» времени нет.
+    if (entry!.status != AttendanceStatus.late) {
+      return multiSelect ? entry!.status.label : null;
+    }
     final time = _formatTime(TimeOfDay.fromDateTime(entry!.markedAt));
     if (multiSelect) return '${entry!.status.label} · $time';
     return time;
@@ -1093,13 +1075,15 @@ class _StudentRow extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        marked ? subtitle! : 'нет отметки',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: marked ? fg : scheme.onSurfaceVariant,
+                      if (marked ? subtitle != null : true) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          marked ? subtitle! : 'нет отметки',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: marked ? fg : scheme.onSurfaceVariant,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1255,7 +1239,7 @@ class _ArmedHint extends StatelessWidget {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              'Второе нажатие: выберите время или используйте текущее.',
+              'Второе нажатие подтвердит отсутствие.',
               style: theme.textTheme.bodySmall,
             ),
           ),

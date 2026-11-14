@@ -75,11 +75,15 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     await action();
     if (!mounted) return;
     final error = _cloud.error;
+    // Обрывки журнала: дни, в которые посещаемость не поместилась.
+    final skippedNote = _cloud.lastResult?.skippedNote ?? '';
+    final message = error ??
+        (skippedNote.isEmpty ? 'Готово' : 'Готово. $skippedNote');
     final messenger = ScaffoldMessenger.of(context);
     messenger.hideCurrentSnackBar();
     messenger.showSnackBar(
       SnackBar(
-        content: Text(error ?? 'Готово'),
+        content: Text(message),
         backgroundColor: error == null
             ? null
             : Theme.of(context).colorScheme.error,
@@ -516,6 +520,7 @@ class _StatusCard extends StatelessWidget {
     final IconData icon;
     final String title;
     Color color = scheme.primary;
+    final skipped = cloud.lastResult;
 
     if (!cloud.isConfigured) {
       icon = Icons.cloud_off_outlined;
@@ -536,6 +541,11 @@ class _StatusCard extends StatelessWidget {
       icon = Icons.error_outline_rounded;
       title = 'Ошибка синхронизации';
       color = scheme.error;
+    } else if (skipped != null && skipped.hasSkippedDays) {
+      // Обрывки журнала: дни, в которые посещаемость не поместилась.
+      icon = Icons.warning_amber_rounded;
+      title = 'Не во все дни отметки легли';
+      color = scheme.tertiary;
     } else if (cloud.hasPendingChanges) {
       icon = Icons.cloud_upload_outlined;
       title = 'Есть несохранённые отметки';
@@ -544,6 +554,14 @@ class _StatusCard extends StatelessWidget {
       icon = Icons.cloud_done_outlined;
       title = 'Синхронизация включена';
     }
+
+    final message = cloud.error ??
+        (skipped != null && skipped.hasSkippedDays
+            ? skipped.skippedNote
+            : (cloud.isConfigured
+                ? 'Таблица: ${cloud.spreadsheetId}'
+                : 'Подключите таблицу, чтобы отметки сохранялись '
+                      'на Google Диске.'));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -564,11 +582,7 @@ class _StatusCard extends StatelessWidget {
                 Text(title, style: theme.textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text(
-                  cloud.error ??
-                      (cloud.isConfigured
-                          ? 'Таблица: ${cloud.spreadsheetId}'
-                          : 'Подключите таблицу, чтобы отметки сохранялись '
-                                'на Google Диске.'),
+                  message,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),

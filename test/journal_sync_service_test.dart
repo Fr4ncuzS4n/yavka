@@ -266,8 +266,7 @@ void main() {
     expect(api.batchUpdateCalls, 0);
   });
 
-  test('пары нет в блоке дня — таблица не согласована с расписанием',
-      () async {
+  test('пары нет в блоке дня — день пропускается как обрывок', () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
       alexey,
@@ -275,35 +274,30 @@ void main() {
     ]);
     final service = JournalSyncService(api);
 
-    // День 9 — понедельник, блок 3 колонки; по расписанию четырнадцатая
-    // пара не влезает: блок шире расписания не становится.
-    await expectLater(
-      service.push(
-        spreadsheetId: 'sid',
-        mapping: mapping,
-        sessions: [
-          session({
-            '1|mon-4': AttendanceEntry(
-              status: AttendanceStatus.came,
-              markedAt: DateTime(2026, 11, 9, 9),
-              lessonKey: 'mon-4',
-            ),
-          }),
-        ],
-        schedule: scheduleWith(monday: 4),
-      ),
-      throwsA(
-        isA<CloudSyncException>().having(
-          (error) => error.message,
-          'message',
-          contains('Пары 4 нет в дне 9'),
-        ),
-      ),
+    // День 9 — понедельник, блок 3 колонки; по расписанию четыре пары,
+    // четвёртой колонки нет: день — обрывок.
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        session({
+          '1|mon-4': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+            lessonKey: 'mon-4',
+          ),
+        }),
+      ],
+      schedule: scheduleWith(monday: 4),
     );
+
+    // Ничего не записано, день попал в предупреждение.
+    expect(result.updatedCells, 0);
+    expect(result.skippedDays, [9]);
+    expect(api.batchUpdateCalls, 0);
   });
 
-  test('дня нет в таблице — отправка останавливается с подсказкой',
-      () async {
+  test('дня нет в таблице — отметки за него пропускаются', () async {
     final api = FakeSheetsApi();
     // Журнал без выходных, где 9-е пропущено: числа рабочих дней
     // 1…8, 10…30. Числа — на строке 2 (0-based 1), студент — на строке
@@ -326,28 +320,105 @@ void main() {
     ]);
     final service = JournalSyncService(api);
 
-    await expectLater(
-      service.push(
-        spreadsheetId: 'sid',
-        mapping: mapping,
-        sessions: [
-          session({
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        session({
+          '1': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+          ),
+        }),
+      ],
+      schedule: scheduleWith(),
+    );
+
+    // Ошибки нет: день пропущен, посещаемость в него не расставить.
+    expect(result.updatedCells, 0);
+    expect(result.skippedDays, [9]);
+    expect(result.skippedNote, contains('9'));
+    expect(api.batchUpdateCalls, 0);
+  });
+
+  test('журнал начинается не с 1 числа — пропущенные дни игнорируются',
+      () async {
+    final api = FakeSheetsApi();
+    // Журнал начинается с 3 ноября: чисел дней 1 и 2 в таблице нет.
+    final numbers = List<SeedCell?>.filled(100, null);
+    var column = 2;
+    for (var day = 3; day <= 30; day++) {
+      numbers[column] = api.seedCell(value: day);
+      column += 3;
+    }
+    final student = List<SeedCell?>.filled(100, null)
+      ..[1] = api.seedCell(value: 'Алексей Морозов');
+    api.seedSheet(tabTitle, [
+      List<SeedCell?>.filled(100, null),
+      numbers,
+      List<SeedCell?>.filled(100, null),
+      student,
+    ]);
+    final service = JournalSyncService(api);
+
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        AttendanceSession(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 1),
+          students: const [alexey, maria],
+          entries: {
             '1': AttendanceEntry(
               status: AttendanceStatus.came,
-              markedAt: DateTime(2026, 11, 9, 9),
+              markedAt: DateTime(2026, 11, 1, 9),
             ),
-          }),
-        ],
-        schedule: scheduleWith(),
-      ),
-      throwsA(
-        isA<CloudSyncException>().having(
-          (error) => error.message,
-          'message',
-          contains('нет дня 9'),
+          },
         ),
-      ),
+        AttendanceSession(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 2),
+          students: const [alexey, maria],
+          entries: {
+            '1': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 2, 9),
+            ),
+          },
+        ),
+      ],
+      schedule: scheduleWith(),
     );
+
+    // Дней 1 и 2 нет в журнале: отметки не расставить, об ошибках
+    // речи нет — дни попадают в предупреждение.
+    expect(result.updatedCells, 0);
+    expect(result.skippedDays, [1, 2]);
+    expect(api.batchUpdateCalls, 0);
+
+    // Зато день 3, который в журнале есть, пишется как обычно.
+    final written = await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        AttendanceSession(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 3),
+          students: const [alexey, maria],
+          entries: {
+            '1': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 3, 9),
+            ),
+          },
+        ),
+      ],
+      schedule: scheduleWith(),
+    );
+    expect(written.updatedCells, 3);
+    expect(written.skippedDays, isEmpty);
+    expect(api.cell(tabTitle, 3, 2).backgroundColor, 0x00FF00);
   });
 
   test('студента нет в журнале — приложение не добавляет его само',
@@ -382,8 +453,7 @@ void main() {
     );
   });
 
-  test('пары нет в строке пар — отправка останавливается с подсказкой',
-      () async {
+  test('пары нет в строке пар — день пропускается как обрывок', () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
       alexey,
@@ -397,35 +467,31 @@ void main() {
     api.seedSheet(tabTitle, override);
 
     final service = JournalSyncService(api);
-    await expectLater(
-      service.push(
-        spreadsheetId: 'sid',
-        mapping: const JournalMapping(
-          tabTitle: tabTitle,
-          dayRow: 1,
-          fioColumn: 1,
-          firstStudentRow: 3,
-          pairRow: 2,
-        ),
-        sessions: [
-          session({
-            '1|mon-3': AttendanceEntry(
-              status: AttendanceStatus.came,
-              markedAt: DateTime(2026, 11, 9, 9),
-              lessonKey: 'mon-3',
-            ),
-          }),
-        ],
-        schedule: scheduleWith(),
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
       ),
-      throwsA(
-        isA<CloudSyncException>().having(
-          (error) => error.message,
-          'message',
-          contains('Пары 3 нет в дне 9'),
-        ),
-      ),
+      sessions: [
+        session({
+          '1|mon-3': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+            lessonKey: 'mon-3',
+          ),
+        }),
+      ],
+      schedule: scheduleWith(),
     );
+
+    // Ничего не записано, день попал в предупреждение об обрывке.
+    expect(result.updatedCells, 0);
+    expect(result.skippedDays, [9]);
+    expect(api.batchUpdateCalls, 0);
   });
 
   test('загрузка читает список по ФИО и отметки по парам', () async {

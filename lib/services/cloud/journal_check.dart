@@ -32,12 +32,23 @@ class JournalCheckIssue {
   final String message;
 }
 
-/// Отчёт проверки: по дням с парами и список проблем.
+/// Отчёт проверки: по дням с парами, блокирующие проблемы и
+/// предупреждения.
 class JournalCheckReport {
-  const JournalCheckReport({required this.rows, required this.issues});
+  const JournalCheckReport({
+    required this.rows,
+    required this.issues,
+    this.warnings = const [],
+  });
 
   final List<JournalCheckRow> rows;
+
+  /// Проблемы, из-за которых синхронизация заблокирована.
   final List<JournalCheckIssue> issues;
+
+  /// Предупреждения: не блокируют синхронизацию. Например, обрывки —
+  /// дни, в которые посещаемость расставить нельзя.
+  final List<JournalCheckIssue> warnings;
 
   bool get ok => issues.isEmpty;
 }
@@ -71,6 +82,7 @@ abstract final class JournalCheck {
 
     final rows = <JournalCheckRow>[];
     final issues = <JournalCheckIssue>[];
+    final warnings = <JournalCheckIssue>[];
     final days = JournalCellCodec.daysInMonth(month);
 
     for (var day = 1; day <= days; day++) {
@@ -83,10 +95,12 @@ abstract final class JournalCheck {
 
       final span = layout.spanOf(day);
       if (span == null) {
-        issues.add(
+        // Журнал может начинаться не с 1 числа: дня нет — отметки в
+        // него не расставить, но и синхронизацию блокировать нечего.
+        warnings.add(
           JournalCheckIssue(
-            'Дня $day нет в строке чисел, хотя по расписанию в этот день '
-            'пар: $pairs. Проверьте таблицу.',
+            'Дня $day нет в журнале — посещаемость за этот день '
+            'расставить нельзя.',
           ),
         );
         continue;
@@ -106,21 +120,27 @@ abstract final class JournalCheck {
 
       // Каждая пара расписания должна найти свою колонку в блоке: либо
       // по номеру в строке пар, либо по смещению, если строки пар нет.
+      // Обрывок блока — предупреждение: в такой день посещаемость не
+      // расставить, но остальные дни синхронизируются.
       final missing = [
         for (var pair = 1; pair <= pairs; pair++)
           if (!span.hasPair(pair)) pair,
       ];
       if (missing.isNotEmpty) {
-        issues.add(
+        warnings.add(
           JournalCheckIssue(
-            'День $day: пар(ы) ${missing.join(", ")} не нашлось в колонках '
-            'блока, хотя по расписанию их: $pairs. Отметки не поместятся: '
-            'проверьте таблицу или расписание.',
+            'День $day: в блоке нет колонок для пар(ы) '
+            '${missing.join(", ")} — посещаемость за этот день расставить '
+            'нельзя.',
           ),
         );
       }
     }
 
-    return JournalCheckReport(rows: rows, issues: issues);
+    return JournalCheckReport(
+      rows: rows,
+      issues: issues,
+      warnings: warnings,
+    );
   }
 }

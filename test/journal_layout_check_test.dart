@@ -140,9 +140,11 @@ void main() {
       schedule: scheduleWith(monday: 3, tuesday: 2),
     );
 
-    expect(report.ok, isFalse);
+    expect(report.ok, isTrue);
+    // Обрывок — предупреждение: пары 3 в таблице нет, в день 9
+    // посещаемость расставить нельзя.
     expect(
-      report.issues.map((issue) => issue.message).join(' '),
+      report.warnings.map((issue) => issue.message).join(' '),
       contains('День 9'),
     );
   });
@@ -194,6 +196,8 @@ void main() {
 
     expect(report.ok, isTrue);
     expect(report.issues, isEmpty);
+    // Блоки вмещают все пары расписания — предупреждений нет.
+    expect(report.warnings, isEmpty);
     // В отчёте только дни с парами.
     expect(
       report.rows.map((row) => row.date.day),
@@ -204,7 +208,8 @@ void main() {
     expect(day9.columnCount, 3);
   });
 
-  test('пар больше, чем колонок в блоке, — проверка не пройдена', () async {
+  test('пар больше, чем колонок в блоке, — предупреждение об обрывке',
+      () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: [alexey]);
     final grid = (await api.getSheetGrid('sid', 'НОЯБРЬ : 2026'))!;
@@ -217,14 +222,15 @@ void main() {
       schedule: scheduleWith(monday: 4, tuesday: 2),
     );
 
-    expect(report.ok, isFalse);
+    // Обрывок не блокирует синхронизацию, но о нём сообщают.
+    expect(report.ok, isTrue);
     expect(
-      report.issues.map((issue) => issue.message).join(' '),
+      report.warnings.map((issue) => issue.message).join(' '),
       contains('День 9'),
     );
   });
 
-  test('дня с парами нет в таблице — проверка это показывает', () {
+  test('дня с парами нет в таблице — предупреждение об обрывке', () {
     final layout = JournalLayout(dayRow: 1, spans: [
       // В таблице только 6-е и 10-е: 9-е пропущено.
       JournalDaySpan(day: 6, startColumn: 2, width: 2),
@@ -238,9 +244,10 @@ void main() {
       schedule: scheduleWith(monday: 3, tuesday: 2),
     );
 
-    expect(report.ok, isFalse);
+    // Дня нет — посещаемость в него не расставить, но это не ошибка.
+    expect(report.ok, isTrue);
     expect(
-      report.issues.map((issue) => issue.message).join(' '),
+      report.warnings.map((issue) => issue.message).join(' '),
       contains('Дня 9 нет'),
     );
   });

@@ -247,9 +247,10 @@ void main() {
     expect(env.cloud.error, contains('настройте журнал'));
   });
 
-  test('таблица не согласована с расписанием — синхронизация блокируется',
+  test('обрывок дня пропускается — отметки за него не расставляются',
       () async {
-    // Четыре пары в понедельник, а в блоке дня 3 колонки.
+    // Четыре пары в понедельник, а в блоке дня 3 колонки: блок —
+    // обрывок, четвёртая пара в него не поместится.
     final env = build(entries: {
       '1': AttendanceEntry(
         status: AttendanceStatus.came,
@@ -267,12 +268,15 @@ void main() {
       ),
     );
 
-    expect(env.cloud.error, contains('День 2'));
-    // Отметка не ушла: структура и содержимое не тронуты.
-    expect(env.api.batchUpdateCalls, 0);
+    // Обрывок — предупреждение, а не блокировка: синхронизация идёт.
+    expect(env.cloud.error, isNull);
 
     await env.cloud.syncNow();
-    expect(env.cloud.error, contains('День 2'));
+    expect(env.cloud.error, isNull);
+    // Отметки за обрывок не ушли, но приложение сообщило об этом.
+    expect(env.api.batchUpdateCalls, 0);
+    expect(env.cloud.lastResult?.skippedDays, [9]);
+    expect(env.cloud.lastResult?.skippedNote, contains('9'));
   });
 
   test('загрузка с Диска обновляет локальные отметки по ФИО', () async {

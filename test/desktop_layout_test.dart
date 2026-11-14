@@ -88,13 +88,13 @@ void main() {
 
     await tester.tap(find.text('Непришёл'));
     await tester.pumpAndSettle();
-    expect(
-      find.text('Второе нажатие: выберите время или используйте текущее.'),
-      findsOneWidget,
-    );
+    expect(find.text('Второе нажатие подтвердит отсутствие.'), findsOneWidget);
 
+    // Второе нажатие отмечает отсутствие: диалога времени нет — время
+    // пишется только у «Опоздал».
     await tester.tap(find.text('Непришёл'));
     await tester.pumpAndSettle();
-    expect(find.byType(TimePickerDialog), findsOneWidget);
+    expect(find.byType(TimePickerDialog), findsNothing);
+    expect(find.text('Непришёл'), findsWidgets);
   }, variant: TargetPlatformVariant.desktop());
 }

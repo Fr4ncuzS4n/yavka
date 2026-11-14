@@ -451,6 +451,19 @@ class _PreviewCard extends StatelessWidget {
                 ),
               ),
           ],
+          if (snapshot.check.warnings.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            for (final warning in snapshot.check.warnings)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  warning.message,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: scheme.tertiary,
+                  ),
+                ),
+              ),
+          ],
           if (snapshot.check.ok && snapshot.month != null) ...[
             const SizedBox(height: 8),
             Text(

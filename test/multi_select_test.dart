@@ -71,7 +71,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Все 10 строк построены (высокий экран) и отмечены.
-    // В этом режиме статус виден в подписи строки: «Пришёл · 13:10».
+    // В этом режиме статус виден в подписи строки: «Пришёл» — без
+    // времени, время есть только у опоздания.
     expect(_inList(find.textContaining('Пришёл')), findsNWidgets(10));
     expect(_inList(find.text('нет отметки')), findsNothing);
     expect(find.text('10 из 10'), findsOneWidget);

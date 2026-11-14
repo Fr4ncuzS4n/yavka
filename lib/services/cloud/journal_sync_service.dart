@@ -13,10 +13,26 @@ import 'sheets_api.dart';
 
 /// Итог отправки отметок в журнал.
 class JournalSyncResult {
-  const JournalSyncResult({required this.updatedCells});
+  const JournalSyncResult({
+    required this.updatedCells,
+    this.skippedDays = const [],
+  });
 
   /// Сколько ячеек перезаписано.
   final int updatedCells;
+
+  /// Дни месяца, отметки которых не расставлены: дня нет в журнале или
+  /// блок колонок пар — обрывок, в него посещаемость не поместится.
+  final List<int> skippedDays;
+
+  bool get hasSkippedDays => skippedDays.isNotEmpty;
+
+  /// Предупреждение о пропущенных днях для экрана синхронизации.
+  String get skippedNote {
+    if (skippedDays.isEmpty) return '';
+    return 'Посещаемость за дни ${skippedDays.join(', ')} расставить '
+        'нельзя: в журнале нет дня или колонок пар.';
+  }
 }
 
 /// Список группы, снятый с листа журнала.
@@ -129,16 +145,40 @@ class JournalSyncService {
     final sheetId = _tabId(meta.tabs, mapping.tabTitle);
     final rowsOfStudent = _rowsOfStudents(grid, mapping);
     final requests = <Map<String, Object?>>[];
+    final skippedDays = <int>[];
     var updatedCells = 0;
 
     for (final session in sessions) {
       if (!_isSameMonth(session.date, month)) continue;
+      if (session.entries.isEmpty) continue;
+
       final span = layout.spanOf(session.date.day);
-      if (span == null) {
-        throw CloudSyncException(
-          'В журнале нет дня ${session.date.day}, хотя есть отметки за '
-          '${session.date.day}.${session.date.month}. Проверьте таблицу.',
-        );
+      final schedulePairs =
+          schedule?.lessonsFor(weekdayOf(session.date)).length ?? 0;
+
+      // «Обрывок» — дня в журнале нет или блок колонок пар не вмещает
+      // все нужные пары (журнал может начинаться не с 1 числа, у дней
+      // бывают отрезанные блоки). В такой день посещаемость расставить
+      // нельзя: отметки пропускаются, день попадает в предупреждение.
+      final missingPairs = span == null || schedulePairs == 0
+          ? const <int>[]
+          : [
+              for (var pair = 1; pair <= schedulePairs; pair++)
+                if (!span.hasPair(pair)) pair,
+            ];
+      final neededPairs = {
+        for (final item in session.entries.entries)
+          if (!_isWholeDay(item.value))
+            _pairNumberOf(item.value, session.date, schedule) ?? 1,
+      };
+      final unusable =
+          span == null ||
+          (schedulePairs > 0 && missingPairs.isNotEmpty) ||
+          (schedulePairs == 0 && span.pairs.isEmpty) ||
+          neededPairs.any((pair) => !span.hasPair(pair));
+      if (unusable) {
+        skippedDays.add(session.date.day);
+        continue;
       }
 
       // План записи: (строка, колонка) → желаемое состояние ячейки.
@@ -148,8 +188,6 @@ class JournalSyncService {
 
       // Пары дня для отметки «на весь день»: по расписанию, если оно
       // есть, иначе все колонки пар из строки «ПАРА» таблицы.
-      final schedulePairs =
-          schedule?.lessonsFor(weekdayOf(session.date)).length ?? 0;
       final wholeDayPairs = schedulePairs > 0
           ? [
               for (var pair = 1; pair <= schedulePairs; pair++)
@@ -190,14 +228,7 @@ class JournalSyncService {
 
         // Пары, отмеченные отдельно, не трогаем общей отметкой.
         final pair = _pairNumberOf(entry, session.date, schedule) ?? 1;
-        final column = span.columnOfPairOrNull(pair);
-        if (column == null) {
-          throw CloudSyncException(
-            'Пары $pair нет в дне ${session.date.day}: в строке пар для '
-            'неё нет колонки. Проверьте таблицу или расписание.',
-          );
-        }
-        plan[(row, column)] = _desiredCell(entry);
+        plan[(row, span.columnOfPair(pair))] = _desiredCell(entry);
       }
 
       for (final MapEntry(key: (row, column), value: desired)
@@ -220,7 +251,11 @@ class JournalSyncService {
     if (requests.isNotEmpty) {
       await _api.batchUpdate(spreadsheetId, requests);
     }
-    return JournalSyncResult(updatedCells: updatedCells);
+    skippedDays.sort();
+    return JournalSyncResult(
+      updatedCells: updatedCells,
+      skippedDays: List.unmodifiable(skippedDays),
+    );
   }
 
   /// Читает список группы и отметки из журнала.
