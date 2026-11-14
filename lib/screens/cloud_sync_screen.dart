@@ -20,6 +20,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
   final _clientIdController = TextEditingController();
   final _clientSecretController = TextEditingController();
   final _webClientIdController = TextEditingController();
+  final _displayNameController = TextEditingController();
 
   CloudSyncController get _cloud => widget.cloud;
 
@@ -37,6 +38,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     _clientIdController.dispose();
     _clientSecretController.dispose();
     _webClientIdController.dispose();
+    _displayNameController.dispose();
     super.dispose();
   }
 
@@ -57,6 +59,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
     _clientIdController.text = settings.clientId ?? '';
     _clientSecretController.text = settings.clientSecret ?? '';
     _webClientIdController.text = settings.webClientId ?? '';
+    _displayNameController.text = settings.displayName;
   }
 
   Future<void> _runAction(Future<void> Function() action) async {
@@ -249,6 +252,34 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                       ),
                     ],
                     const SizedBox(height: 12),
+                    TextField(
+                      controller: _displayNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Ваше имя (для уведомлений)',
+                        hintText: 'Иван Петров',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          await _cloud.setDisplayName(
+                            _displayNameController.text,
+                          );
+                          if (!mounted) return;
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Имя сохранено'),
+                            ),
+                          );
+                        },
+                        child: const Text('Сохранить имя'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
@@ -268,6 +299,18 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                           label: const Text('Загрузить'),
                         ),
                       ],
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _SectionCard(
+                  title: 'Уведомления',
+                  children: [
+                    const Text(
+                      'Когда вы отмечаете студентов на паре из расписания, '
+                      'все, кто пользуется этой же таблицей, получают '
+                      'уведомление: оно появляется у них в колокольчике '
+                      'после синхронизации.',
                     ),
                   ],
                 ),

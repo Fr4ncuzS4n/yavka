@@ -6,8 +6,13 @@ import 'package:flutter/foundation.dart';
 
 import '../../data/attendance_controller.dart';
 import '../../data/cloud_settings.dart';
+<<<<<<< HEAD
 import '../../models/attendance_session.dart';
 import '../../models/student.dart';
+=======
+import '../../data/notification_controller.dart';
+import '../../models/sync_notification.dart';
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 import 'cloud_exceptions.dart';
 import 'google_auth_service.dart';
 import 'month_grid_sync_service.dart';
@@ -26,10 +31,16 @@ class CloudSyncController extends ChangeNotifier {
     required SheetsApi sheetsApi,
     required CloudSettingsStore settingsStore,
     required bool isWeb,
+    NotificationController? notifications,
   }) : _api = sheetsApi,
        _settingsStore = settingsStore,
        _isWeb = isWeb,
+<<<<<<< HEAD
        _sync = MonthGridSyncService(sheetsApi) {
+=======
+       _notifications = notifications,
+       _sync = GoogleSheetsSyncService(sheetsApi) {
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     attendance.addListener(_onAttendanceChanged);
     auth.addListener(_onAuthChanged);
   }
@@ -38,7 +49,12 @@ class CloudSyncController extends ChangeNotifier {
   final GoogleAuthService auth;
   final SheetsApi _api;
   final CloudSettingsStore _settingsStore;
+<<<<<<< HEAD
   final MonthGridSyncService _sync;
+=======
+  final GoogleSheetsSyncService _sync;
+  final NotificationController? _notifications;
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   final bool _isWeb;
 
   CloudSettings _settings = const CloudSettings();
@@ -76,6 +92,7 @@ class CloudSyncController extends ChangeNotifier {
 
   bool get autoSync => _settings.autoSync;
 
+<<<<<<< HEAD
   /// Месяц, с которым работает синхронизация.
   DateTime get selectedMonth => _selectedMonth;
 
@@ -85,6 +102,28 @@ class CloudSyncController extends ChangeNotifier {
 
   bool _hasAutoSyncInvolved() =>
       isConfigured && isSignedIn && autoSync;
+=======
+  /// Уведомления о отметках на парах (если переданы при создании).
+  NotificationController? get notifications => _notifications;
+
+  /// Имя для уведомлений: как пользователя видят другие при чтении
+  /// уведомлений из таблицы.
+  String get displayName => _settings.displayName;
+
+  /// Сохраняет имя, которым подписываются уведомления о отметках на парах.
+  Future<void> setDisplayName(String value) async {
+    final name = value.trim();
+    if (name == _settings.displayName) return;
+    _settings = _settings.copyWith(displayName: name);
+    notifyListeners();
+    try {
+      await _settingsStore.save(_settings);
+    } catch (error) {
+      _error = _message(error);
+      notifyListeners();
+    }
+  }
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 
   /// Загружает настройки, восстанавливает вход и (если включена
   /// автосинхронизация) подтягивает отметки из таблицы.
@@ -286,7 +325,58 @@ class CloudSyncController extends ChangeNotifier {
     _lastSyncAt = DateTime.now();
     _pending = false;
     _error = null;
+
+    // Уведомляем всех, кто пользуется таблицей: отмеченные пары
+    // уходят в лист «Уведомления».
+    await _flushLessonNotifications(spreadsheetId);
+
     notifyListeners();
+  }
+
+  Future<void> _flushLessonNotifications(String spreadsheetId) async {
+    final notifications = _notifications;
+    if (notifications == null) return;
+    final outbox = notifications.drainOutbox();
+    if (outbox.isEmpty) return;
+    try {
+      await _sync.pushNotifications(
+        spreadsheetId: spreadsheetId,
+        notifications: [
+          for (final item in outbox) _asNotification(item),
+        ],
+      );
+    } catch (_) {
+      // Отправка не удалась — возвращаем уведомления в отложенные,
+      // чтобы они ушли при следующей синхронизации.
+      notifications.restoreOutbox(outbox);
+      rethrow;
+    }
+  }
+
+  SyncNotification _asNotification(PendingLessonMark item) {
+    final author = _settings.displayName.trim().isEmpty
+        ? 'Староста'
+        : _settings.displayName.trim();
+    return SyncNotification(
+      id: '${item.id}|${item.count}',
+      createdAt: DateTime.now(),
+      author: author,
+      groupName: item.groupName,
+      lessonTitle: item.lessonTitle,
+      message:
+          'Отметка на паре «${item.lessonTitle}» (${item.lessonTime}): '
+          '${item.count} ${_pluralMark(item.count)}',
+    );
+  }
+
+  static String _pluralMark(int count) {
+    final mod10 = count % 10;
+    final mod100 = count % 100;
+    if (mod10 == 1 && mod100 != 11) return 'отметка';
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+      return 'отметки';
+    }
+    return 'отметок';
   }
 
   Future<void> _pull() async {
@@ -304,6 +394,17 @@ class CloudSyncController extends ChangeNotifier {
     } finally {
       _applyingRemote = false;
     }
+
+    // Подтягиваем уведомления других пользователей таблицы.
+    final notifications = _notifications;
+    if (notifications != null) {
+      final remote = await _sync.pullNotifications(
+        spreadsheetId: spreadsheetId,
+        groupName: attendance.session.groupName,
+      );
+      notifications.addRemote(remote);
+    }
+
     _lastSyncAt = DateTime.now();
     _error = null;
     notifyListeners();

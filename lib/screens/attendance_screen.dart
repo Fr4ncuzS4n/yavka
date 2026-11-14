@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
+<<<<<<< HEAD
 import '../data/ui_settings.dart';
+=======
+import '../data/notification_controller.dart';
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 import '../models/attendance_entry.dart';
 import '../models/attendance_status.dart';
+import '../models/schedule_lesson.dart';
 import '../models/student.dart';
 import '../services/cloud/cloud_sync_controller.dart';
 import '../theme/app_theme.dart';
 import '../theme/status_style.dart';
 import 'cloud_sync_screen.dart';
+<<<<<<< HEAD
 import 'settings_screen.dart';
+=======
+import 'notifications_screen.dart';
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 
 /// Ключ списка группы (используется в тестах).
 const kStudentListKey = Key('student-list');
@@ -24,12 +33,20 @@ const _kGap = 12.0;
 /// одной из 4 кнопок: «Пришёл», «Непришёл», «Опоздал», «По уважительной».
 /// «Непришёл» подтверждается вторым нажатием с выбором времени
 /// (по умолчанию — текущее).
+///
+/// Если передан [lesson] — отметки ставятся на конкретную пару из
+/// расписания, а не на весь день.
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({
     super.key,
     this.attendance,
     this.cloud,
+<<<<<<< HEAD
     this.uiSettings,
+=======
+    this.lesson,
+    this.notifications,
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   });
 
   /// Состояние посещаемости. Если не передано — создаётся пример группы
@@ -39,9 +56,17 @@ class AttendanceScreen extends StatefulWidget {
   /// Облачная синхронизация. Если `null`, кнопка Google Диска не показывается.
   final CloudSyncController? cloud;
 
+<<<<<<< HEAD
   /// Выборный дизайн («Настройки → Дизайн»). Если `null`, кнопка
   /// с шестерёнкой скрывается.
   final UiSettingsController? uiSettings;
+=======
+  /// Пара из расписания: отметки будут привязаны к ней.
+  final ScheduleLesson? lesson;
+
+  /// Уведомления о отметках других пользователей таблицы.
+  final NotificationController? notifications;
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -152,12 +177,26 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _mark(AttendanceStatus status) {
+<<<<<<< HEAD
     final targets = _targets;
     if (targets.isEmpty) return;
     final now = DateTime.now();
     for (final student in targets) {
       _attendance.mark(student, status, now);
     }
+=======
+    final student = _selectedStudent;
+    if (student == null) return;
+    final lesson = widget.lesson;
+    _attendance.mark(
+      student,
+      status,
+      DateTime.now(),
+      lessonKey: lesson?.id,
+      lessonTitle: lesson?.subject,
+    );
+    _queueLessonNotification();
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     setState(() => _absentArmed = false);
   }
 
@@ -184,6 +223,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (!mounted) return;
 
     final time = pickedTime ?? TimeOfDay.fromDateTime(now);
+<<<<<<< HEAD
     for (final student in targets) {
       _attendance.mark(
         student,
@@ -201,7 +241,52 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     for (final student in targets) {
       _attendance.clearMark(student);
     }
+=======
+    final lesson = widget.lesson;
+    _attendance.mark(
+      student,
+      AttendanceStatus.absent,
+      DateTime(now.year, now.month, now.day, time.hour, time.minute),
+      lessonKey: lesson?.id,
+      lessonTitle: lesson?.subject,
+    );
+    _queueLessonNotification();
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     setState(() => _absentArmed = false);
+  }
+
+  /// Отмеченная пара попадает в отложенное уведомление — оно уйдёт
+  /// в таблицу при следующей синхронизации, и её увидят другие.
+  void _queueLessonNotification() {
+    final lesson = widget.lesson;
+    final cloud = widget.cloud;
+    if (lesson == null || cloud == null) return;
+    cloud.notifications?.queueLessonMark(
+      groupName: _attendance.session.groupName,
+      lesson: lesson,
+      date: _attendance.session.date,
+    );
+  }
+
+  /// Отметка студента с учётом режима: на паре или на весь день.
+  AttendanceEntry? _entryFor(Student student) {
+    final lesson = widget.lesson;
+    if (lesson == null) return _attendance.entryFor(student.id);
+    return _attendance.entryInLesson(
+      student.id,
+      lessonKey: lesson.id,
+      lessonTitle: lesson.subject,
+    );
+  }
+
+  /// Сколько студентов отмечено в текущем режиме.
+  int get _markedCount {
+    final lesson = widget.lesson;
+    if (lesson == null) return _attendance.entries.length;
+    return _attendance.session.markedCountInLesson(
+      lessonKey: lesson.id,
+      lessonTitle: lesson.subject,
+    );
   }
 
   @override
@@ -210,6 +295,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         title: _buildTitle(context),
         actions: [
+<<<<<<< HEAD
           IconButton(
             tooltip: _multiSelect
                 ? 'Выйти из множественного выбора'
@@ -219,6 +305,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ),
             onPressed: _toggleMultiSelect,
           ),
+=======
+          if (widget.notifications != null)
+            NotificationBell(notifications: widget.notifications!),
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
           if (widget.cloud != null) _buildCloudAction(context),
           if (widget.uiSettings != null)
             IconButton(
@@ -302,14 +392,18 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Widget _buildTitle(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final lesson = widget.lesson;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('Явка'),
+        Text(lesson == null ? 'Явка' : 'Пара «${lesson.subject}»'),
         const SizedBox(height: 2),
         Text(
-          _formatDate(DateTime.now()),
+          lesson == null
+              ? _formatDate(DateTime.now())
+              : 'Группа ${_attendance.session.groupName} · '
+                    '${lesson.timeLabel} · ${_formatDate(DateTime.now())}',
           style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: scheme.onSurfaceVariant),
         ),
@@ -327,8 +421,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             _GroupHeader(
-              groupName: _attendance.session.groupName,
-              marked: _attendance.entries.length,
+              title: widget.lesson == null
+                  ? 'Группа ${_attendance.session.groupName}'
+                  : 'Пара «${widget.lesson!.subject}»',
+              subtitle: widget.lesson == null
+                  ? null
+                  : 'Группа ${_attendance.session.groupName} · '
+                        '${widget.lesson!.timeLabel}',
+              marked: _markedCount,
               total: students.length,
             ),
             const SizedBox(height: 16),
@@ -337,11 +437,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               _StudentRow(
                 key: ValueKey('student-${students[i].id}'),
                 student: students[i],
+<<<<<<< HEAD
                 entry: _attendance.entryFor(students[i].id),
                 selected: _multiSelect
                     ? _selectedIds.contains(students[i].id)
                     : _selectedStudentId == students[i].id,
                 multiSelect: _multiSelect,
+=======
+                entry: _entryFor(students[i]),
+                selected: _selectedStudentId == students[i].id,
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
                 onTap: () => _select(students[i]),
               ),
             ],
@@ -478,15 +583,17 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 }
 
-/// Заголовок: название группы, счётчик отметок и прогресс.
+/// Заголовок: название, счётчик отметок и прогресс.
 class _GroupHeader extends StatelessWidget {
   const _GroupHeader({
-    required this.groupName,
+    required this.title,
     required this.marked,
     required this.total,
+    this.subtitle,
   });
 
-  final String groupName;
+  final String title;
+  final String? subtitle;
   final int marked;
   final int total;
 
@@ -502,11 +609,27 @@ class _GroupHeader extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Text(
-                'Группа $groupName',
-                style: theme.textTheme.titleLarge,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: theme.textTheme.titleLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (subtitle != null && subtitle!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
               ),
             ),
             Container(

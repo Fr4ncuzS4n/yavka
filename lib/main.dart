@@ -8,9 +8,16 @@ import 'data/attendance_controller.dart';
 import 'data/attendance_store.dart';
 import 'data/cloud_settings.dart';
 import 'data/example_group.dart';
+<<<<<<< HEAD
 import 'data/ui_settings.dart';
+=======
+import 'data/notification_controller.dart';
+import 'data/notification_store.dart';
+import 'data/schedule_controller.dart';
+import 'data/schedule_store.dart';
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
 import 'models/attendance_session.dart';
-import 'screens/attendance_screen.dart';
+import 'screens/home_shell.dart';
 import 'services/cloud/cloud_sync_controller.dart';
 import 'services/cloud/google_auth_service.dart';
 import 'services/cloud/google_sheets_api.dart';
@@ -22,6 +29,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   var attendance = AttendanceController.inMemory();
+  var schedule = ScheduleController.inMemory();
+  var notifications = NotificationController();
   CloudSyncController? cloud;
   UiSettingsController? settings;
 
@@ -36,6 +45,16 @@ Future<void> main() async {
     );
     await attendance.load();
 
+    schedule = ScheduleController(
+      store: SharedPreferencesScheduleStore(preferences),
+    );
+    await schedule.load();
+
+    notifications = NotificationController(
+      store: SharedPreferencesNotificationStore(preferences),
+    );
+    await notifications.load();
+
     final auth = GoogleAuthService(
       flow: createOAuthFlow(),
       tokenStore: SharedPreferencesTokenStore(preferences),
@@ -46,21 +65,30 @@ Future<void> main() async {
       sheetsApi: GoogleSheetsApi(accessToken: auth.accessToken),
       settingsStore: SharedPreferencesCloudSettingsStore(preferences),
       isWeb: kIsWeb,
+      notifications: notifications,
     );
     settings = UiSettingsController(preferences: preferences);
   } catch (error, stackTrace) {
     // Приложение должно запускаться даже без локального хранилища —
-    // тогда отметки живут только в памяти.
+    // тогда данные живут только в памяти.
     debugPrint(
       'Не удалось инициализировать локальное хранилище: $error\n$stackTrace',
     );
   }
 
   runApp(
+<<<<<<< HEAD
     AppRoot(
       attendance: attendance,
       cloud: cloud,
       settings: settings,
+=======
+    MyApp(
+      attendance: attendance,
+      schedule: schedule,
+      notifications: notifications,
+      cloud: cloud,
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     ),
   );
 
@@ -69,20 +97,33 @@ Future<void> main() async {
   }
 }
 
+<<<<<<< HEAD
 class AppRoot extends StatelessWidget {
   const AppRoot({
     super.key,
     this.attendance,
     this.cloud,
     this.settings,
+=======
+class MyApp extends StatelessWidget {
+  const MyApp({
+    super.key,
+    this.attendance,
+    this.schedule,
+    this.notifications,
+    this.cloud,
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   });
 
   final AttendanceController? attendance;
+  final ScheduleController? schedule;
+  final NotificationController? notifications;
   final CloudSyncController? cloud;
   final UiSettingsController? settings;
 
   @override
   Widget build(BuildContext context) {
+<<<<<<< HEAD
     if (settings == null) {
       return MaterialApp(
         title: 'Явка',
@@ -111,6 +152,20 @@ class AppRoot extends StatelessWidget {
           ),
         );
       },
+=======
+    return MaterialApp(
+      title: 'Явка',
+      debugShowCheckedModeBanner: false,
+      theme: AppTheme.light(),
+      darkTheme: AppTheme.dark(),
+      themeMode: ThemeMode.system,
+      home: HomeShell(
+        attendance: attendance,
+        schedule: schedule,
+        notifications: notifications,
+        cloud: cloud,
+      ),
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
     );
   }
 }

@@ -194,6 +194,7 @@ class FakeSheetsApi implements SheetsApi {
     }
   }
 
+<<<<<<< HEAD
   GoogleApiException _invalidArgument(String detail) => GoogleApiException(
     'request contains an invalid argument. $detail',
     statusCode: 400,
@@ -458,5 +459,10 @@ class _FakeSheet {
     final blue = channel(raw['blue']);
     if (red > 245 && green > 245 && blue > 245) return null;
     return red << 16 | green << 8 | blue;
+=======
+  int _rowFromRange(String range) {
+    final match = RegExp(r'!A(\d+):[A-Z]+\d*$').firstMatch(range);
+    return int.parse(match?.group(1) ?? '1');
+>>>>>>> 7eccdcc (Вкладка «Расписание»: пары по дням недели, отметки на каждой паре и уведомления через таблицу)
   }
 }

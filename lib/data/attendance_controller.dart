@@ -43,6 +43,24 @@ class AttendanceController extends ChangeNotifier {
 
   AttendanceEntry? entryFor(String studentId) => _session.entries[studentId];
 
+  /// Отметка студента на конкретной паре из расписания.
+  AttendanceEntry? entryInLesson(
+    String studentId, {
+    String? lessonKey,
+    String? lessonTitle,
+  }) => _session.entryInLesson(
+    studentId,
+    lessonKey: lessonKey,
+    lessonTitle: lessonTitle,
+  );
+
+  /// Сколько студентов отмечено на паре.
+  int markedCountInLesson({String? lessonKey, String? lessonTitle}) =>
+      _session.markedCountInLesson(
+        lessonKey: lessonKey,
+        lessonTitle: lessonTitle,
+      );
+
   /// Загружает сохранённую сессию. Если сохранён вчерашний день — отметки
   /// сбрасываются, а список группы остаётся.
   Future<void> load() async {
@@ -61,12 +79,26 @@ class AttendanceController extends ChangeNotifier {
   }
 
   /// Ставит отметку выбранному студенту.
-  void mark(Student student, AttendanceStatus status, DateTime markedAt) {
+  ///
+  /// Без [lessonKey]/[lessonTitle] отметка относится ко всему дню;
+  /// с ними — к конкретной паре из расписания.
+  void mark(
+    Student student,
+    AttendanceStatus status,
+    DateTime markedAt, {
+    String? lessonKey,
+    String? lessonTitle,
+  }) {
     // Если приложение открыто через полночь — начинаем новый день.
     final current = _session.forToday();
     _session = current.withEntry(
       student,
-      AttendanceEntry(status: status, markedAt: markedAt),
+      AttendanceEntry(
+        status: status,
+        markedAt: markedAt,
+        lessonKey: lessonKey,
+        lessonTitle: lessonTitle,
+      ),
     );
     notifyListeners();
     _persist();

@@ -10,6 +10,7 @@ class CloudSettings {
     this.clientId,
     this.clientSecret,
     this.webClientId,
+    this.displayName = '',
   });
 
   /// ID таблицы из ссылки `docs.google.com/spreadsheets/d/<ID>/edit`.
@@ -31,6 +32,10 @@ class CloudSettings {
 
   /// OAuth Client ID для web (тип «Web application»).
   final String? webClientId;
+
+  /// Имя для уведомлений: как пользователя увидят те, кто пользуется
+  /// той же таблицей.
+  final String displayName;
 
   bool get hasSpreadsheet =>
       spreadsheetId != null && spreadsheetId!.trim().isNotEmpty;
@@ -55,6 +60,7 @@ class CloudSettings {
     String? clientId,
     String? clientSecret,
     String? webClientId,
+    String? displayName,
     bool clearSpreadsheet = false,
     bool clearClientSecret = false,
   }) => CloudSettings(
@@ -69,6 +75,7 @@ class CloudSettings {
         ? null
         : (clientSecret ?? this.clientSecret),
     webClientId: webClientId ?? this.webClientId,
+    displayName: displayName ?? this.displayName,
   );
 }
 
@@ -103,6 +110,7 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
   static const _clientIdKey = 'yavka.cloud.client_id';
   static const _clientSecretKey = 'yavka.cloud.client_secret';
   static const _webClientIdKey = 'yavka.cloud.web_client_id';
+  static const _displayNameKey = 'yavka.cloud.display_name';
 
   final SharedPreferences _preferences;
 
@@ -119,6 +127,7 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
       clientId: _preferences.getString(_clientIdKey),
       clientSecret: _preferences.getString(_clientSecretKey),
       webClientId: _preferences.getString(_webClientIdKey),
+      displayName: _preferences.getString(_displayNameKey) ?? '',
     );
   }
 
@@ -150,6 +159,7 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
         _preferences.remove(_webClientIdKey)
       else
         _preferences.setString(_webClientIdKey, settings.webClientId!),
+      _preferences.setString(_displayNameKey, settings.displayName),
     ]);
   }
 }

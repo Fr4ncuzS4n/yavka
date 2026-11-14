@@ -9,6 +9,15 @@ DateTime dateOnly(DateTime value) =>
 bool isSameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
+/// Маркер пары внутри ключа отметки: id пары или её название.
+String? lessonMarker(String? lessonKey, String? lessonTitle) {
+  final key = lessonKey?.trim();
+  if (key != null && key.isNotEmpty) return key;
+  final title = lessonTitle?.trim();
+  if (title != null && title.isNotEmpty) return title;
+  return null;
+}
+
 /// Строка таблицы посещаемости: группа + дата + студент + отметка.
 class AttendanceRecord {
   const AttendanceRecord({
@@ -24,17 +33,28 @@ class AttendanceRecord {
   final AttendanceEntry entry;
 
   /// Ключ, по которому отметка сопоставляется со строкой в таблице.
-  String get key =>
-      recordKey(groupName: groupName, date: date, studentId: student.id);
+  String get key => recordKey(
+    groupName: groupName,
+    date: date,
+    studentId: student.id,
+    lesson: lessonMarker(entry.lessonKey, entry.lessonTitle),
+  );
 }
 
 /// Единый формат ключа отметки для локального хранилища и Google Таблиц.
+///
+/// [lesson] отличает отметки на разных парах одного дня.
 String recordKey({
   required String groupName,
   required DateTime date,
   required String studentId,
-}) =>
-    '${dateOnly(date).toIso8601String().substring(0, 10)}|$groupName|$studentId';
+  String? lesson,
+}) {
+  final base =
+      '${dateOnly(date).toIso8601String().substring(0, 10)}|$groupName|$studentId';
+  final marker = lesson?.trim();
+  return marker == null || marker.isEmpty ? base : '$base|$marker';
+}
 
 /// Состояние посещаемости за один день.
 class AttendanceSession {
@@ -52,8 +72,58 @@ class AttendanceSession {
 
   final List<Student> students;
 
-  /// Отметки по идентификатору студента.
+  /// Отметки по ключу `entryKey`: студент + (опционально) пара.
   final Map<String, AttendanceEntry> entries;
+
+  /// Ключ отметки в [entries]: студент и (опционально) пара.
+  ///
+  /// Отметка на весь день — просто идентификатор студента; отметка на
+  /// паре — «идентификатор|пара» (id пары или её название).
+  static String entryKey({
+    required String studentId,
+    String? lessonKey,
+    String? lessonTitle,
+  }) {
+    final marker = lessonMarker(lessonKey, lessonTitle);
+    return marker == null ? studentId : '$studentId|$marker';
+  }
+
+  /// Отметка студента на весь день (без привязки к паре).
+  AttendanceEntry? entryFor(String studentId) => entries[studentId];
+
+  /// Отметка студента на конкретной паре.
+  ///
+  /// Сначала ищем по идентификатору пары (локальные отметки), затем —
+  /// по названию (отметки, загруженные из таблицы).
+  AttendanceEntry? entryInLesson(
+    String studentId, {
+    String? lessonKey,
+    String? lessonTitle,
+  }) {
+    if (lessonKey != null && lessonKey.trim().isNotEmpty) {
+      final direct = entries[entryKey(studentId: studentId, lessonKey: lessonKey)];
+      if (direct != null) return direct;
+    }
+    final title = lessonTitle?.trim();
+    if (title == null || title.isEmpty) return null;
+    for (final item in entries.entries) {
+      if (!item.key.startsWith('$studentId|')) continue;
+      if (item.value.lessonTitle == title) return item.value;
+    }
+    return null;
+  }
+
+  /// Сколько студентов отмечено на паре.
+  int markedCountInLesson({String? lessonKey, String? lessonTitle}) =>
+      entries.values.where((entry) {
+        if (lessonKey != null && entry.lessonKey == lessonKey) return true;
+        final title = lessonTitle?.trim();
+        return entry.lessonKey == null &&
+            lessonKey != null &&
+            title != null &&
+            title.isNotEmpty &&
+            entry.lessonTitle == title;
+      }).length;
 
   /// Создаёт пустую сессию на сегодня.
   factory AttendanceSession.forToday({
@@ -99,14 +169,19 @@ class AttendanceSession {
     }
   }
 
-  /// Добавляет или заменяет отметку студента.
+  /// Добавляет или заменяет отметку студента (на день или на пару).
   AttendanceSession withEntry(Student student, AttendanceEntry entry) {
     final students = this.students.any((s) => s.id == student.id)
         ? this.students
         : List<Student>.unmodifiable([...this.students, student]);
+    final key = entryKey(
+      studentId: student.id,
+      lessonKey: entry.lessonKey,
+      lessonTitle: entry.lessonTitle,
+    );
     return copyWith(
       students: students,
-      entries: {...entries, student.id: entry},
+      entries: {...entries, key: entry},
     );
   }
 
@@ -156,7 +231,11 @@ class AttendanceSession {
           mergedStudents[index] = record.student;
         }
       }
-      mergedEntries[record.student.id] = record.entry;
+      mergedEntries[entryKey(
+        studentId: record.student.id,
+        lessonKey: record.entry.lessonKey,
+        lessonTitle: record.entry.lessonTitle,
+      )] = record.entry;
     }
 
     return copyWith(
