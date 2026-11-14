@@ -159,6 +159,53 @@ void main() {
     expect(api.cell(title, 1, MonthGridCodec.firstDayColumn).value, '1');
   });
 
+  test('чужие мержи в шапке снимаются перед перерисовкой', () async {
+    // Репродукция пользовательской ошибки «Invalid requests[5].mergeCells:
+    // Чтобы объединить или разделить ячейки, необходимо выделить весь
+    // диапазон». Лист остался от старой версии: мерж блока второго дня
+    // на три строки вместо двух. Он частично пересекается с нашими
+    // мержами, поэтому рисование шапки сначала снимает чужие
+    // объединения точными диапазонами отдельным пакетом.
+    final api = FakeSheetsApi();
+    final foreignRow = List<SeedCell?>.filled(10, null);
+    foreignRow[6] = api.seedCell(merged: true, mergeRows: 3, mergeCols: 4);
+    api.seedSheet(title, [
+      foreignRow,
+      List<SeedCell?>.filled(10, null),
+      List<SeedCell?>.filled(10, null),
+    ]);
+    expect(api.mergeCount(title), 1);
+
+    final sync = service(api);
+    final result = await sync.push(
+      spreadsheetId: 'sid',
+      month: month,
+      sessions: [sessionWith({
+        '1': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 8),
+        ),
+      })],
+    );
+
+    expect(result.sheetCreated, isFalse);
+    // Шапка нарисована целиком: 60 своих мержей, чужого больше нет.
+    expect(api.mergeCount(title), 2 * 30);
+    expect(api.cell(title, 0, day9Column).value, 'Понедельник');
+
+    // Порядок пакетов: расширение колонок, снятие чужих мержей, шапка,
+    // отметки. Снятие не смешано с рисованием — как и расширение.
+    expect(api.batchRequestLog, hasLength(4));
+    expect(api.batchRequestLog[0], ['updateSheetProperties']);
+    expect(api.batchRequestLog[1], ['unmergeCells']);
+    final drawBatch = api.batchRequestLog[2];
+    expect(drawBatch.first, 'updateCells');
+    expect(
+      drawBatch.where((request) => request == 'mergeCells'),
+      hasLength(2 * 30),
+    );
+  });
+
   test('чужие отметки на листе не затираются, если локальных нет', () async {
     final api = FakeSheetsApi();
     seedJournal(

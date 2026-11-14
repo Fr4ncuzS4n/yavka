@@ -18,11 +18,15 @@ class FakeSheetsApi implements SheetsApi {
   /// Сколько раз вызван batchUpdate — тесты проверяют разделение пакетов.
   int batchUpdateCalls = 0;
 
+  /// Типы запросов каждого вызова batchUpdate — тесты проверяют порядок.
+  final List<List<String>> batchRequestLog = [];
+
   void reset({String spreadsheetId = 'fake-spreadsheet'}) {
     _sheets.clear();
     _ids.clear();
     _nextSheetId = 0;
     batchUpdateCalls = 0;
+    batchRequestLog.clear();
     _currentSpreadsheetId = spreadsheetId;
   }
 
@@ -168,6 +172,9 @@ class FakeSheetsApi implements SheetsApi {
   ) async {
     if (failBatchUpdate) throw const GooglePermissionException();
     batchUpdateCalls++;
+    batchRequestLog.add([
+      for (final request in requests) request.keys.first,
+    ]);
     for (final request in requests) {
       final updateSheetProps = request['updateSheetProperties'];
       if (updateSheetProps is Map) {
@@ -308,10 +315,21 @@ class FakeSheetsApi implements SheetsApi {
       colCount: ((range['endColumnIndex'] as num?)?.toInt() ?? 0) -
           ((range['startColumnIndex'] as num?)?.toInt() ?? 0),
     );
+    // Как настоящий Google: пересекающиеся мержи должны быть целиком
+    // накрыты новым диапазоном; частичное пересечение отклоняется
+    // ошибкой «необходимо выделить весь диапазон».
+    for (final item in sheet.merges) {
+      if (!_intersects(item, merge)) continue;
+      if (!_contains(merge, item)) {
+        throw _invalidArgument(
+          'mergeCells: чтобы объединить или разделить ячейки, '
+          'необходимо выделить весь диапазон',
+        );
+      }
+    }
+    // Мержи, накрытые новым диапазоном целиком, поглощаются им.
     sheet.merges
-      ..removeWhere(
-        (item) => item.startRow == merge.startRow && item.startColumn == merge.startColumn,
-      )
+      ..removeWhere((item) => _contains(merge, item))
       ..add(merge);
   }
 
@@ -322,10 +340,30 @@ class FakeSheetsApi implements SheetsApi {
     if (sheet == null) return;
     final startRow = (range['startRowIndex'] as num?)?.toInt() ?? 0;
     final startColumn = (range['startColumnIndex'] as num?)?.toInt() ?? 0;
+    final endRow = (range['endRowIndex'] as num?)?.toInt() ?? 0;
+    final endColumn = (range['endColumnIndex'] as num?)?.toInt() ?? 0;
+    // Как настоящий Google: снимаются все объединения, пересекающие
+    // диапазон; пересечений нет — тихий no-op.
     sheet.merges.removeWhere(
-      (item) => item.startRow == startRow && item.startColumn == startColumn,
+      (item) =>
+          item.startRow < endRow &&
+          startRow < item.startRow + item.rowCount &&
+          item.startColumn < endColumn &&
+          startColumn < item.startColumn + item.colCount,
     );
   }
+
+  bool _intersects(GridMerge a, GridMerge b) =>
+      a.startRow < b.startRow + b.rowCount &&
+      b.startRow < a.startRow + a.rowCount &&
+      a.startColumn < b.startColumn + b.colCount &&
+      b.startColumn < a.startColumn + a.colCount;
+
+  bool _contains(GridMerge outer, GridMerge inner) =>
+      inner.startRow >= outer.startRow &&
+      inner.startRow + inner.rowCount <= outer.startRow + outer.rowCount &&
+      inner.startColumn >= outer.startColumn &&
+      inner.startColumn + inner.colCount <= outer.startColumn + outer.colCount;
 
   _FakeSheet? _sheetsById(Object? id) {
     if (id == null) {

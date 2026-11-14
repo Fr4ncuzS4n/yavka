@@ -128,6 +128,7 @@ class MonthGridSyncService {
         month: monthDate,
         sheetId: _tabId(meta.tabs, actualTitle),
         columnCount: grid?.colCount ?? 0,
+        existingMerges: grid?.merges ?? const [],
       );
       // Перечитываем сетку, чтобы поверх шапки ничего не затирать.
       grid = await _api.getSheetGrid(spreadsheetId, actualTitle);
@@ -532,11 +533,18 @@ class MonthGridSyncService {
 
   // -- Создание шапки нового листа ------------------------------------------
 
+  /// Пересекает ли объединение полосу шапки (строки от 0 до headerRows).
+  bool _overlapsHeader(GridMerge merge, {required int headerRows}) =>
+      merge.rowCount > 0 &&
+      merge.colCount > 0 &&
+      merge.startRow < headerRows;
+
   Future<void> _createHeader({
     required String spreadsheetId,
     required DateTime month,
     required int sheetId,
     required int columnCount,
+    List<GridMerge> existingMerges = const [],
   }) async {
     final header = MonthGridCodec.buildHeader(month);
     final totalColumns = header.first.length;
@@ -588,7 +596,36 @@ class MonthGridSyncService {
       ]);
     }
 
-    // 2. Рисуем шапку: значения, ширины колонок и объединения дней.
+    // 2. Снимаем чужие объединения в полосе шапки (строки 0–2). Лист без
+    //    валидной шапки может быть от старой версии приложения или
+    //    нарисован вручную: его мержи частично пересекаются с нашими, и
+    //    Google отклоняет mergeCells с «необходимо выделить весь
+    //    диапазон». Снимаем точными диапазонами уже прочитанных мержей —
+    //    такой запрос валиден всегда. Отдельным пакетом, как и
+    //    расширение: не полагаемся на то, как Google применяет запросы
+    //    одного пакета.
+    final staleMerges = [
+      for (final merge in existingMerges)
+        if (_overlapsHeader(merge, headerRows: header.length)) merge,
+    ];
+    if (staleMerges.isNotEmpty) {
+      await _api.batchUpdate(spreadsheetId, [
+        for (final merge in staleMerges)
+          {
+            'unmergeCells': {
+              'range': {
+                'sheetId': sheetId,
+                'startRowIndex': merge.startRow,
+                'endRowIndex': merge.startRow + merge.rowCount,
+                'startColumnIndex': merge.startColumn,
+                'endColumnIndex': merge.startColumn + merge.colCount,
+              },
+            },
+          },
+      ]);
+    }
+
+    // 3. Рисуем шапку: значения, ширины колонок и объединения дней.
     final requests = <Map<String, Object?>>[
       _updateCells(
         sheetId: sheetId,
