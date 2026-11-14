@@ -9,12 +9,14 @@ import 'fake_sheets_api.dart';
 /// Рисует в фейковой таблице готовый журнал месяца, как его ведёт
 /// человек: лист «МЕСЯЦ : ГОД», строка чисел дней, колонка ФИО и блоки
 /// колонок под пары. В разные дни блоки разной ширины — приложение
-/// подстраивается под такую таблицу.
+/// подстраивается под такую таблицу. Выходных в журнале нет: отмечать
+/// в них нельзя, значит и колонок под них человек не заводит.
 void seedJournal(
   FakeSheetsApi api, {
   required DateTime month,
 
-  /// Сколько колонок-пар в каждом дне; список циклится по дням месяца.
+  /// Сколько колонок-пар в каждом рабочем дне; список циклится по
+  /// рабочим дням (пн–пт).
   required List<int> pairsByDay,
   List<Student> students = const [],
 
@@ -42,13 +44,21 @@ void seedJournal(
   final days = JournalCellCodec.daysInMonth(month);
   final pairRowNumber = pairRow ?? dayRow + 1;
 
-  // Блоки дней начинаются сразу после колонки ФИО.
+  // Блоки дней начинаются сразу после колонки ФИО; выходные (суббота
+  // и воскресенье) колонок не получают.
   final firstBlock = fioColumn + 1;
-  final starts = <int>[];
+  final startOf = <int, int>{};
+  final widthOf = <int, int>{};
   var cursor = firstBlock;
+  var workingDay = 0;
   for (var day = 1; day <= days; day++) {
-    starts.add(cursor);
-    cursor += pairsByDay[(day - 1) % pairsByDay.length];
+    final date = DateTime(month.year, month.month, day);
+    if (weekdayOf(date) >= 6) continue;
+    final width = pairsByDay[workingDay % pairsByDay.length];
+    startOf[day] = cursor;
+    widthOf[day] = width;
+    cursor += width;
+    workingDay++;
   }
   final totalColumns = cursor;
 
@@ -63,12 +73,12 @@ void seedJournal(
   numberRow[fioColumn] = api.seedCell(value: '№');
   pairRowCells[fioColumn] = api.seedCell(value: 'ПАРА');
 
-  for (var day = 1; day <= days; day++) {
-    final start = starts[day - 1];
+  for (final day in startOf.keys) {
+    final start = startOf[day]!;
     final date = DateTime(month.year, month.month, day);
     weekdayRow[start] = api.seedCell(value: weekdayFullName(weekdayOf(date)));
     numberRow[start] = api.seedCell(value: day);
-    final pairs = pairsByDay[(day - 1) % pairsByDay.length];
+    final pairs = widthOf[day]!;
     for (var pair = 1; pair <= pairs; pair++) {
       pairRowCells[start + pair - 1] = api.seedCell(value: pair);
     }
@@ -96,11 +106,12 @@ void seedJournal(
     final row = empty();
     row[fioColumn] = api.seedCell(value: student.fullName);
     for (var day = 1; day <= days; day++) {
+      final start = startOf[day];
+      if (start == null) continue; // выходного дня в журнале нет
       final forStudent = marks[day]?[student.fullName];
       if (forStudent == null) continue;
       forStudent.forEach((pair, entry) {
-        final start = starts[day - 1];
-        if (pair < 1 || pair > pairsByDay[(day - 1) % pairsByDay.length]) {
+        if (pair < 1 || pair > widthOf[day]!) {
           return;
         }
         final text = JournalCellCodec.cellTextFor(entry);

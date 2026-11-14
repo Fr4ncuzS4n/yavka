@@ -29,13 +29,19 @@ void main() {
   const tabTitle = 'НОЯБРЬ : 2026';
   const spreadsheetId = 'created-spreadsheet';
 
-  // Блоки по дням недели (7 колонок цикла): пн — 3 колонки.
-  const pairsByDay = [1, 3, 2, 1, 2, 1, 1];
+  // Блоки по рабочим дням (5 колонок цикла): пн — 3, вт — 2, ср — 1,
+  // чт — 2, пт — 1. Выходных в журнале нет.
+  const pairsByDay = [3, 2, 1, 2, 1];
 
+  // Начало блока дня: колонки копятся с первой колонки после ФИО,
+  // выходные (суббота и воскресенье) колонок не занимают.
   int blockStart(int day) {
     var column = 2;
+    var working = 0;
     for (var d = 1; d < day; d++) {
-      column += pairsByDay[(d - 1) % pairsByDay.length];
+      if (DateTime(2026, 11, d).weekday >= 6) continue;
+      column += pairsByDay[working % pairsByDay.length];
+      working++;
     }
     return column;
   }

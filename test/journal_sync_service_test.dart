@@ -24,8 +24,9 @@ void main() {
   const maria = Student(id: '2', fullName: 'Мария Соколова');
   const tabTitle = 'НОЯБРЬ : 2026';
 
-  // Блоки по дням недели (7 колонок цикла): пн — 3, вт — 2.
-  const pairsByDay = [1, 3, 2, 1, 2, 1, 1];
+  // Блоки по рабочим дням (5 колонок цикла): пн — 3, вт — 2, ср — 1,
+  // чт — 2, пт — 1. Выходных в журнале нет.
+  const pairsByDay = [3, 2, 1, 2, 1];
   final mapping = const JournalMapping(
     tabTitle: tabTitle,
     dayRow: 1,
@@ -33,10 +34,15 @@ void main() {
     firstStudentRow: 3,
   );
 
+  // Начало блока дня: колонки копятся с первой колонки после ФИО,
+  // выходные (суббота и воскресенье) колонок не занимают.
   int blockStart(int day) {
     var column = 2;
+    var working = 0;
     for (var d = 1; d < day; d++) {
-      column += pairsByDay[(d - 1) % pairsByDay.length];
+      if (DateTime(2026, 11, d).weekday >= 6) continue;
+      column += pairsByDay[working % pairsByDay.length];
+      working++;
     }
     return column;
   }
@@ -299,12 +305,14 @@ void main() {
   test('дня нет в таблице — отправка останавливается с подсказкой',
       () async {
     final api = FakeSheetsApi();
-    // Журнал, где 9-е пропущено: числа 1…8, 10…30. Числа — на строке 2
-    // (0-based 1), студент — на строке 4 (0-based 3).
+    // Журнал без выходных, где 9-е пропущено: числа рабочих дней
+    // 1…8, 10…30. Числа — на строке 2 (0-based 1), студент — на строке
+    // 4 (0-based 3).
     final numbers = List<SeedCell?>.filled(100, null);
     var column = 2;
     for (var day = 1; day <= 30; day++) {
       if (day == 9) continue;
+      if (DateTime(2026, 11, day).weekday >= 6) continue;
       numbers[column] = api.seedCell(value: day);
       column += 3;
     }

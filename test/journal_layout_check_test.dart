@@ -15,9 +15,9 @@ import 'support/month_journal_fixture.dart';
 void main() {
   final month = DateTime(2026, 11, 1);
   const alexey = Student(id: '1', fullName: 'Алексей Морозов');
-  // Блоки по дням недели: вс — 1 колонка, пн — 3, вт — 2 и т.д.
-  // Длина цикла 7 — недели совпадают с днями недели.
-  const pairsByDay = [1, 3, 2, 1, 2, 1, 1];
+  // Блоки по рабочим дням (5 колонок цикла): пн — 3, вт — 2, ср — 1,
+  // чт — 2, пт — 1. Выходных в журнале нет.
+  const pairsByDay = [3, 2, 1, 2, 1];
   final mapping = const JournalMapping(
     tabTitle: 'НОЯБРЬ : 2026',
     dayRow: 1,
@@ -25,11 +25,15 @@ void main() {
     firstStudentRow: 3,
   );
 
-  // Начало блока дня: колонки копятся с первой колонки после ФИО.
+  // Начало блока дня: колонки копятся с первой колонки после ФИО,
+  // выходные (суббота и воскресенье) колонок не занимают.
   int blockStart(int day) {
     var column = 2;
+    var working = 0;
     for (var d = 1; d < day; d++) {
-      column += pairsByDay[(d - 1) % pairsByDay.length];
+      if (DateTime(2026, 11, d).weekday >= 6) continue;
+      column += pairsByDay[working % pairsByDay.length];
+      working++;
     }
     return column;
   }
@@ -67,10 +71,12 @@ void main() {
     final layout = JournalLayout.scan(grid, mapping);
 
     expect(layout, isNotNull);
-    expect(layout!.spanOf(1)!.startColumn, 2);
-    // 1 ноября — воскресенье: блок из 1 колонки.
-    expect(layout.spanOf(1)!.width, 1);
-    // 9 ноября — понедельник: блок из 3 колонок.
+    // 1 ноября — воскресенье: выходных в таблице нет.
+    expect(layout!.spanOf(1), isNull);
+    // 2 ноября — понедельник, первый рабочий день: блок из 3 колонок.
+    expect(layout.spanOf(2)!.startColumn, 2);
+    expect(layout.spanOf(2)!.width, 3);
+    // 9 ноября — тоже понедельник: блок из 3 колонок.
     expect(layout.spanOf(9)!.startColumn, blockStart(9));
     expect(layout.spanOf(9)!.width, 3);
     expect(layout.spanOf(10)!.width, 2);
@@ -220,8 +226,8 @@ void main() {
 
   test('дня с парами нет в таблице — проверка это показывает', () {
     final layout = JournalLayout(dayRow: 1, spans: [
-      // В таблице только 8-е и 10-е: 9-е пропущено.
-      JournalDaySpan(day: 8, startColumn: 2, width: 2),
+      // В таблице только 6-е и 10-е: 9-е пропущено.
+      JournalDaySpan(day: 6, startColumn: 2, width: 2),
       JournalDaySpan(day: 10, startColumn: 4, width: 3),
     ]);
 

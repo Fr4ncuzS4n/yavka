@@ -47,7 +47,9 @@ class JournalCheckReport {
 /// Пары в дне берутся из расписания: в один день их может быть две, в
 /// другой — три. Приложение спрашивает пользователя, верно ли количество
 /// пар, и проверяет таблицу на целостность: у каждого дня с парами
-/// должен быть блок колонок, вмещающий все пары этого дня.
+/// должен быть блок колонок, вмещающий все пары этого дня. Выходные
+/// (суббота и воскресенье) не проверяются и в отчёт не попадают:
+/// отмечать в них нельзя, значит и колонок под них в журнале нет.
 abstract final class JournalCheck {
   static JournalCheckReport check({
     required DateTime month,
@@ -73,6 +75,9 @@ abstract final class JournalCheck {
 
     for (var day = 1; day <= days; day++) {
       final date = DateTime(month.year, month.month, day);
+      // В выходные отмечать нельзя, поэтому колонок под них в журнале
+      // нет — и требовать их не нужно.
+      if (weekdayOf(date) >= 6) continue;
       final pairs = schedule.lessonsFor(weekdayOf(date)).length;
       if (pairs == 0) continue; // дня без пар в таблице может и не быть
 
