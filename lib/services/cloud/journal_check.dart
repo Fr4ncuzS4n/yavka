@@ -87,22 +87,30 @@ abstract final class JournalCheck {
         continue;
       }
 
+      final (firstColumn, lastColumn) = span.pairColumnRange;
       rows.add(
         JournalCheckRow(
           date: date,
           columnRange:
-              '${JournalMapping.columnLetter(span.startColumn)}–'
-              '${JournalMapping.columnLetter(span.columnOfPair(span.width))}',
+              '${JournalMapping.columnLetter(firstColumn)}–'
+              '${JournalMapping.columnLetter(lastColumn)}',
           columnCount: span.width,
           pairCount: pairs,
         ),
       );
-      if (pairs > span.width) {
+
+      // Каждая пара расписания должна найти свою колонку в блоке: либо
+      // по номеру в строке пар, либо по смещению, если строки пар нет.
+      final missing = [
+        for (var pair = 1; pair <= pairs; pair++)
+          if (!span.hasPair(pair)) pair,
+      ];
+      if (missing.isNotEmpty) {
         issues.add(
           JournalCheckIssue(
-            'День $day: колонок в блоке — ${span.width}, пар по расписанию '
-            '— $pairs. Отметки не поместятся: проверьте таблицу или '
-            'расписание.',
+            'День $day: пар(ы) ${missing.join(", ")} не нашлось в колонках '
+            'блока, хотя по расписанию их: $pairs. Отметки не поместятся: '
+            'проверьте таблицу или расписание.',
           ),
         );
       }

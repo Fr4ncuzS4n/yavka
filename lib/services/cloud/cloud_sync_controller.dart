@@ -237,6 +237,8 @@ class CloudSyncController extends ChangeNotifier {
     required int dayRow,
     required int fioColumn,
     required int firstStudentRow,
+    int? pairRow,
+    int? lastStudentRow,
   }) async {
     _requireSignedIn();
     final id = _settings.spreadsheetId;
@@ -248,6 +250,8 @@ class CloudSyncController extends ChangeNotifier {
       dayRow: dayRow,
       fioColumn: fioColumn,
       firstStudentRow: firstStudentRow,
+      pairRow: pairRow,
+      lastStudentRow: lastStudentRow,
     );
     return _sync.snapshot(
       spreadsheetId: id,
@@ -264,6 +268,8 @@ class CloudSyncController extends ChangeNotifier {
         journalDayRow: mapping.dayRow,
         journalFioColumn: mapping.fioColumn,
         journalFirstStudentRow: mapping.firstStudentRow,
+        journalPairRow: mapping.pairRow,
+        journalLastStudentRow: mapping.lastStudentRow,
       );
       await _saveSettings();
       notifyListeners();
@@ -424,9 +430,11 @@ class CloudSyncController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Отметки из журнала подписаны ФИО: подставляем студента из списка
-  /// группы, чтобы отметки легли в уже знакомые ключи.
-  Student _resolveStudent(String fullName, List<Student> students) {
+  /// Отметки из журнала подписаны ФИО; ключ отметки может нести пару
+  /// («ФИО|mon-1»), поэтому берём часть до «|» и подставляем студента
+  /// из списка группы, чтобы отметки легли в уже знакомые ключи.
+  Student _resolveStudent(String entryKey, List<Student> students) {
+    final fullName = entryKey.split('|').first.trim();
     for (final student in students) {
       if (student.id == fullName) return student;
     }

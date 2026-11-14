@@ -29,6 +29,8 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
   final _dayRowController = TextEditingController();
   final _fioColumnController = TextEditingController();
   final _firstStudentRowController = TextEditingController();
+  final _pairRowController = TextEditingController();
+  final _lastStudentRowController = TextEditingController();
 
   List<SheetTab> _tabs = const [];
   String? _tabTitle;
@@ -51,17 +53,26 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
     _dayRowController.dispose();
     _fioColumnController.dispose();
     _firstStudentRowController.dispose();
+    _pairRowController.dispose();
+    _lastStudentRowController.dispose();
     super.dispose();
   }
 
   void _fillFromMapping() {
     final mapping = _cloud.journalMapping;
-    _dayRowController.text = '${(mapping?.dayRow ?? 1) + 1}';
+    final dayRow = mapping?.dayRow ?? 1;
+    _dayRowController.text = '${dayRow + 1}';
     _fioColumnController.text = mapping == null
         ? 'B'
         : JournalMapping.columnLetter(mapping.fioColumn);
     _firstStudentRowController.text =
         '${(mapping?.firstStudentRow ?? 3) + 1}';
+    // Строка пар обычно сразу под числами дней.
+    _pairRowController.text = '${(mapping?.pairRow ?? dayRow + 1) + 1}';
+    final lastStudentRow = mapping?.lastStudentRow;
+    _lastStudentRowController.text = lastStudentRow == null
+        ? ''
+        : '${lastStudentRow + 1}';
   }
 
   Future<void> _loadTabs() async {
@@ -116,6 +127,8 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
         dayRow: draft.dayRow,
         fioColumn: draft.fioColumn,
         firstStudentRow: draft.firstStudentRow,
+        pairRow: draft.pairRow,
+        lastStudentRow: draft.lastStudentRow,
       );
       if (!mounted) return;
       setState(() {
@@ -131,8 +144,14 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
     }
   }
 
-  ({String tabTitle, int dayRow, int fioColumn, int firstStudentRow})?
-  _draft() {
+  ({
+    String tabTitle,
+    int dayRow,
+    int fioColumn,
+    int firstStudentRow,
+    int pairRow,
+    int? lastStudentRow,
+  })? _draft() {
     final tabTitle = _tabTitle;
     final dayRow = int.tryParse(_dayRowController.text.trim());
     final fioColumn = JournalMapping.parseColumnLetter(
@@ -141,15 +160,38 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
     final firstStudentRow = int.tryParse(
       _firstStudentRowController.text.trim(),
     );
+    final pairRow = int.tryParse(_pairRowController.text.trim());
+    final lastStudentText = _lastStudentRowController.text.trim();
+    final lastStudentRow = lastStudentText.isEmpty
+        ? null
+        : int.tryParse(lastStudentText);
     if (tabTitle == null ||
         dayRow == null ||
         dayRow < 1 ||
         fioColumn == null ||
         firstStudentRow == null ||
-        firstStudentRow < 1) {
+        firstStudentRow < 1 ||
+        pairRow == null ||
+        pairRow < 1 ||
+        (lastStudentRow != null && lastStudentRow < 1)) {
       setState(() {
-        _error = 'Заполните все поля: лист, строка чисел, колонка ФИО '
-            'и строка первого студента.';
+        _error = 'Заполните поля: лист, строку чисел, колонку ФИО, '
+            'строку первого студента и строку с номерами пар; '
+            'конечную строку ФИО можно оставить пустой.';
+      });
+      return null;
+    }
+    if (pairRow <= dayRow) {
+      setState(() {
+        _error = 'Строка с номерами пар должна быть ниже строки с числами '
+            'дней: под числами идут номера пар.';
+      });
+      return null;
+    }
+    if (lastStudentRow != null && lastStudentRow < firstStudentRow) {
+      setState(() {
+        _error = 'Конечная строка ФИО не может быть выше строки первого '
+            'студента.';
       });
       return null;
     }
@@ -159,6 +201,8 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
       dayRow: dayRow - 1,
       fioColumn: fioColumn,
       firstStudentRow: firstStudentRow - 1,
+      pairRow: pairRow - 1,
+      lastStudentRow: lastStudentRow == null ? null : lastStudentRow - 1,
     );
   }
 
@@ -176,6 +220,8 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
         dayRow: draft.dayRow,
         fioColumn: draft.fioColumn,
         firstStudentRow: draft.firstStudentRow,
+        pairRow: draft.pairRow,
+        lastStudentRow: draft.lastStudentRow,
       ),
     );
     final error = _cloud.error;
@@ -210,7 +256,7 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
               children: [
                 Text(
                   'Приложение ничего не меняет в таблице, а подстраивается '
-                  'под неё. Ответьте на четыре вопроса — и оно само найдёт, '
+                  'под неё. Ответьте на вопросы — и оно само найдёт, '
                   'куда ставить отметки.',
                   style: theme.textTheme.bodyMedium,
                 ),
@@ -283,6 +329,28 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
                       decoration: const InputDecoration(
                         labelText: 'Строка первого студента',
                         helperText: 'Первая строка со списком группы',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _pairRowController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Строка с номерами пар',
+                        helperText: 'Строка «ПАРА», где под числами дней '
+                            'идут номера пар (1, 2, 3…)',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _lastStudentRowController,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Конечная строка ФИО',
+                        helperText: 'Последняя строка списка группы; '
+                            'пусто — до конца листа',
                         border: OutlineInputBorder(),
                       ),
                     ),
@@ -366,7 +434,8 @@ class _PreviewCard extends StatelessWidget {
           if (snapshot.check.rows.isEmpty)
             Text(
               'Дней с парами не нашлось: заполните расписание в приложении '
-              'и проверьте снова.',
+              'и проверьте снова. Отметки на весь день разложатся по всем '
+              'колонкам пар дня даже без расписания.',
               style: theme.textTheme.bodyMedium,
             ),
           if (snapshot.check.issues.isNotEmpty) ...[
@@ -386,7 +455,8 @@ class _PreviewCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(
               'Таблица сходится с расписанием. Отметки будут ставиться '
-              'цветом в колонку пары, при опоздании — ещё и временем.',
+              'цветом в колонки пар; отметка на весь день разложится на '
+              'все пары дня, при опоздании пишется ещё и время.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: scheme.primary,
               ),

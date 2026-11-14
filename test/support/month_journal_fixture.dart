@@ -30,12 +30,17 @@ void seedJournal(
   /// Первая строка студентов (1-based).
   int firstStudentRow = 4,
 
+  /// Строка с номерами пар («ПАРА», 1-based); по умолчанию — сразу
+  /// под строкой чисел дней.
+  int? pairRow,
+
   /// Отметки: день → ФИО студента → номер пары → отметка.
   Map<int, Map<String, Map<int, AttendanceEntry>>> marks = const {},
 }) {
   final title = tabTitle ?? JournalMonth.displayName(month).toUpperCase()
       .replaceFirst(' ', ' : ');
   final days = JournalCellCodec.daysInMonth(month);
+  final pairRowNumber = pairRow ?? dayRow + 1;
 
   // Блоки дней начинаются сразу после колонки ФИО.
   final firstBlock = fioColumn + 1;
@@ -51,12 +56,12 @@ void seedJournal(
 
   final weekdayRow = empty();
   final numberRow = empty();
-  final pairRow = empty();
+  final pairRowCells = empty();
   weekdayRow[fioColumn] = api.seedCell(
     value: JournalMonth.monthName(month.month).toUpperCase(),
   );
   numberRow[fioColumn] = api.seedCell(value: '№');
-  pairRow[fioColumn] = api.seedCell(value: 'ПАРА');
+  pairRowCells[fioColumn] = api.seedCell(value: 'ПАРА');
 
   for (var day = 1; day <= days; day++) {
     final start = starts[day - 1];
@@ -65,7 +70,7 @@ void seedJournal(
     numberRow[start] = api.seedCell(value: day);
     final pairs = pairsByDay[(day - 1) % pairsByDay.length];
     for (var pair = 1; pair <= pairs; pair++) {
-      pairRow[start + pair - 1] = api.seedCell(value: pair);
+      pairRowCells[start + pair - 1] = api.seedCell(value: pair);
     }
   }
 
@@ -77,10 +82,15 @@ void seedJournal(
   }
   rows.add(weekdayRow);
   rows.add(numberRow);
-  while (rows.length < firstStudentRow - 2) {
+  // Пустые строки между числами и строкой пар, затем сама строка пар.
+  while (rows.length < pairRowNumber - 1) {
     rows.add(empty());
   }
-  rows.add(pairRow);
+  rows.add(pairRowCells);
+  // Пустые строки между строкой пар и списком студентов.
+  while (rows.length < firstStudentRow - 1) {
+    rows.add(empty());
+  }
 
   for (final student in students) {
     final row = empty();

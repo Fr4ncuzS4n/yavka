@@ -15,6 +15,8 @@ class CloudSettings {
     this.journalDayRow,
     this.journalFioColumn,
     this.journalFirstStudentRow,
+    this.journalPairRow,
+    this.journalLastStudentRow,
   });
 
   /// ID таблицы из ссылки `docs.google.com/spreadsheets/d/<ID>/edit`.
@@ -45,6 +47,12 @@ class CloudSettings {
   final int? journalFioColumn;
   final int? journalFirstStudentRow;
 
+  /// Строка с номерами пар («ПАРА», 0-based); null — не задана.
+  final int? journalPairRow;
+
+  /// Последняя строка студентов (0-based); null — до конца листа.
+  final int? journalLastStudentRow;
+
   bool get hasSpreadsheet =>
       spreadsheetId != null && spreadsheetId!.trim().isNotEmpty;
 
@@ -71,6 +79,8 @@ class CloudSettings {
         dayRow: dayRow,
         fioColumn: fioColumn,
         firstStudentRow: firstStudentRow,
+        pairRow: journalPairRow,
+        lastStudentRow: journalLastStudentRow,
       );
     } on FormatException {
       return null;
@@ -88,6 +98,8 @@ class CloudSettings {
     int? journalDayRow,
     int? journalFioColumn,
     int? journalFirstStudentRow,
+    int? journalPairRow,
+    int? journalLastStudentRow,
     bool clearSpreadsheet = false,
     bool clearClientSecret = false,
     bool clearJournal = false,
@@ -112,6 +124,10 @@ class CloudSettings {
     journalFirstStudentRow: clearJournal
         ? null
         : (journalFirstStudentRow ?? this.journalFirstStudentRow),
+    journalPairRow: clearJournal ? null : (journalPairRow ?? this.journalPairRow),
+    journalLastStudentRow: clearJournal
+        ? null
+        : (journalLastStudentRow ?? this.journalLastStudentRow),
   );
 }
 
@@ -150,6 +166,9 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
   static const _journalFioColumnKey = 'yavka.cloud.journal_fio_column';
   static const _journalFirstStudentRowKey =
       'yavka.cloud.journal_first_student_row';
+  static const _journalPairRowKey = 'yavka.cloud.journal_pair_row';
+  static const _journalLastStudentRowKey =
+      'yavka.cloud.journal_last_student_row';
 
   final SharedPreferences _preferences;
 
@@ -171,6 +190,8 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
       journalFirstStudentRow: _preferences.getInt(
         _journalFirstStudentRowKey,
       ),
+      journalPairRow: _preferences.getInt(_journalPairRowKey),
+      journalLastStudentRow: _preferences.getInt(_journalLastStudentRowKey),
     );
   }
 
@@ -213,6 +234,17 @@ class SharedPreferencesCloudSettingsStore implements CloudSettingsStore {
         _preferences.setInt(
           _journalFirstStudentRowKey,
           settings.journalFirstStudentRow!,
+        ),
+      if (settings.journalPairRow == null)
+        _preferences.remove(_journalPairRowKey)
+      else
+        _preferences.setInt(_journalPairRowKey, settings.journalPairRow!),
+      if (settings.journalLastStudentRow == null)
+        _preferences.remove(_journalLastStudentRowKey)
+      else
+        _preferences.setInt(
+          _journalLastStudentRowKey,
+          settings.journalLastStudentRow!,
         ),
     ]);
   }

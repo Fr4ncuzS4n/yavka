@@ -81,8 +81,67 @@ void main() {
     expect(layout.spanOf(9)!.columnOfPair(3), blockStart(9) + 2);
   });
 
-  test('строка без чисел не разбирается', () async {
+  test('номера пар снимаются со строки «ПАРА»', () async {
     final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: [alexey]);
+    final grid = (await api.getSheetGrid('sid', 'НОЯБРЬ : 2026'))!;
+
+    final layout = JournalLayout.scan(
+      grid,
+      const JournalMapping(
+        tabTitle: 'НОЯБРЬ : 2026',
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+    );
+
+    expect(layout, isNotNull);
+    // В блоке дня 9 строка пар говорит 1, 2, 3 — как и в фиксуре.
+    final span9 = layout!.spanOf(9)!;
+    expect(span9.pairs, [1, 2, 3]);
+    expect(span9.columnOfPair(1), blockStart(9));
+    expect(span9.columnOfPair(3), blockStart(9) + 2);
+    // Колонки без номера в строке пар — уже не колонки пар.
+    expect(span9.hasPair(4), isFalse);
+  });
+
+  test('пары расписания обязаны найтись в строке пар', () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: [alexey]);
+    // У дня 9 стираем номер третьей колонки: пары 3 в таблице нет.
+    final override = List<List<SeedCell?>>.generate(3, (_) => <SeedCell?>[]);
+    override[2] = List<SeedCell?>.filled(40, null);
+    override[2][blockStart(9) + 2] = api.seedCell();
+    api.seedSheet('НОЯБРЬ : 2026', override);
+
+    final mapping = const JournalMapping(
+      tabTitle: 'НОЯБРЬ : 2026',
+      dayRow: 1,
+      fioColumn: 1,
+      firstStudentRow: 3,
+      pairRow: 2,
+    );
+
+    final grid = (await api.getSheetGrid('sid', 'НОЯБРЬ : 2026'))!;
+    final layout = JournalLayout.scan(grid, mapping)!;
+
+    final report = JournalCheck.check(
+      month: month,
+      mapping: mapping,
+      layout: layout,
+      schedule: scheduleWith(monday: 3, tuesday: 2),
+    );
+
+    expect(report.ok, isFalse);
+    expect(
+      report.issues.map((issue) => issue.message).join(' '),
+      contains('День 9'),
+    );
+  });
+
+  test('строка без чисел не разбирается', () async {    final api = FakeSheetsApi();
     api.seedSheet('НОЯБРЬ : 2026', [
       [null, null, null, null],
       [null, null, null, null],

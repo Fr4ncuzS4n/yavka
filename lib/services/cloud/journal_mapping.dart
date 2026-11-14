@@ -4,14 +4,18 @@ import 'dart:convert';
 ///
 /// Приложение не меняет таблицу, а подстраивается под неё: пользователь
 /// один раз объясняет, где что находится — в каком листе журнал, в какой
-/// строке числа дней, в какой колонке ФИО и с какой строки начинаются
-/// студенты. Пары в дне берутся из расписания приложения.
+/// строке числа дней, в какой колонке ФИО, с какой строки начинаются
+/// студенты и какой строкой заканчиваются, а также в какой строке номера
+/// пар. Пары в дне берутся из расписания приложения, а если расписания
+/// нет — номера пар берутся из таблицы.
 class JournalMapping {
   const JournalMapping({
     required this.tabTitle,
     required this.dayRow,
     required this.fioColumn,
     required this.firstStudentRow,
+    this.pairRow,
+    this.lastStudentRow,
   });
 
   /// Название листа с журналом, например «НОЯБРЬ : 2026».
@@ -26,16 +30,32 @@ class JournalMapping {
   /// Первая строка студентов (0-based).
   final int firstStudentRow;
 
+  /// Строка с номерами пар («ПАРА», 0-based).
+  ///
+  /// В блоке дня колонками пар считаются те, у которых в этой строке
+  /// стоит число. Если строки нет, пары нумеруются по колонкам блока
+  /// слева направо: первая колонка — пара 1 и так далее.
+  final int? pairRow;
+
+  /// Последняя строка студентов (0-based, включительно).
+  ///
+  /// `null` — студенты до конца листа.
+  final int? lastStudentRow;
+
   JournalMapping copyWith({
     String? tabTitle,
     int? dayRow,
     int? fioColumn,
     int? firstStudentRow,
+    int? pairRow,
+    int? lastStudentRow,
   }) => JournalMapping(
     tabTitle: tabTitle ?? this.tabTitle,
     dayRow: dayRow ?? this.dayRow,
     fioColumn: fioColumn ?? this.fioColumn,
     firstStudentRow: firstStudentRow ?? this.firstStudentRow,
+    pairRow: pairRow ?? this.pairRow,
+    lastStudentRow: lastStudentRow ?? this.lastStudentRow,
   );
 
   Map<String, Object?> toJson() => {
@@ -43,6 +63,8 @@ class JournalMapping {
     'dayRow': dayRow,
     'fioColumn': fioColumn,
     'firstStudentRow': firstStudentRow,
+    if (pairRow != null) 'pairRow': pairRow,
+    if (lastStudentRow != null) 'lastStudentRow': lastStudentRow,
   };
 
   factory JournalMapping.fromJson(Map<String, Object?> json) {
@@ -58,11 +80,21 @@ class JournalMapping {
         firstStudentRow < 0) {
       throw const FormatException('Некорректная настройка журнала');
     }
+    // Новые поля необязательны: настройка, сохранённая раньше, без них
+    // продолжает работать — пары нумеруются по колонкам блока.
+    int? optional(String key) {
+      if (!json.containsKey(key) || json[key] == null) return null;
+      final value = int.tryParse(json[key].toString());
+      return value != null && value >= 0 ? value : null;
+    }
+
     return JournalMapping(
       tabTitle: tabTitle,
       dayRow: dayRow,
       fioColumn: fioColumn,
       firstStudentRow: firstStudentRow,
+      pairRow: optional('pairRow'),
+      lastStudentRow: optional('lastStudentRow'),
     );
   }
 

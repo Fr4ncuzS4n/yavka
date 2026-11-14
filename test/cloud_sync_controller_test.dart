@@ -168,6 +168,7 @@ void main() {
       dayRow: 1,
       fioColumn: 1,
       firstStudentRow: 3,
+      pairRow: 2,
     );
     expect(preview.month, month);
     expect(preview.check.ok, isTrue);
@@ -178,6 +179,7 @@ void main() {
         dayRow: 1,
         fioColumn: 1,
         firstStudentRow: 3,
+        pairRow: 2,
       ),
     );
 
@@ -186,9 +188,17 @@ void main() {
     // Месяц подобрался из названия таблицы.
     expect(env.cloud.journalMonth, month);
 
-    // Отметка «пришёл» легла в первую колонку блока 9 ноября.
+    // Отметка «пришёл» легла во все колонки пар блока 9 ноября.
     expect(
       env.api.cell(tabTitle, 3, blockStart(9)).backgroundColor,
+      0x00CC00,
+    );
+    expect(
+      env.api.cell(tabTitle, 3, blockStart(9) + 1).backgroundColor,
+      0x00CC00,
+    );
+    expect(
+      env.api.cell(tabTitle, 3, blockStart(9) + 2).backgroundColor,
       0x00CC00,
     );
     // Писались только ячейки: никаких updateSheetProperties/mergeCells.
@@ -208,6 +218,8 @@ void main() {
         dayRow: 1,
         fioColumn: 1,
         firstStudentRow: 3,
+        pairRow: 2,
+        lastStudentRow: 4,
       ),
     );
 
@@ -216,6 +228,8 @@ void main() {
     expect(stored.journalMapping!.dayRow, 1);
     expect(stored.journalMapping!.fioColumn, 1);
     expect(stored.journalMapping!.firstStudentRow, 3);
+    expect(stored.journalMapping!.pairRow, 2);
+    expect(stored.journalMapping!.lastStudentRow, 4);
   });
 
   test('без настройки журнала синхронизация просит настроить', () async {
@@ -286,14 +300,12 @@ void main() {
       ),
     );
 
-    // Отметка листа (опоздал к 9:40) победила локальную; студент
-    // остался с локальным идентификатором.
+    // Отметка листа (опоздал к 9:40) пришла на пару 1 расписания;
+    // студент остался с локальным идентификатором.
     expect(env.cloud.error, isNull);
-    expect(env.attendance.entryFor('1')?.status, AttendanceStatus.late);
-    expect(
-      env.attendance.entryFor('1')?.markedAt,
-      DateTime(2026, 11, 9, 9, 40),
-    );
+    final pulled = env.attendance.entryInLesson('1', lessonKey: 'mon-1');
+    expect(pulled?.status, AttendanceStatus.late);
+    expect(pulled?.markedAt, DateTime(2026, 11, 9, 9, 40));
     // Список группы подтянулся по ФИО.
     expect(
       env.attendance.students.map((student) => student.fullName),

@@ -63,7 +63,7 @@ void main() {
         entries: entries,
       );
 
-  test('отметка «пришёл» ложится цветом в колонку первой пары', () async {
+  test('отметка на весь день раскладывается на все пары дня', () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
       alexey,
@@ -85,14 +85,56 @@ void main() {
       schedule: scheduleWith(),
     );
 
-    // Отметка на весь день живёт в первой колонке блока дня.
-    expect(api.cell(tabTitle, 3, blockStart(9)).backgroundColor, 0x00CC00);
-    expect(api.cell(tabTitle, 3, blockStart(9)).value, isNull);
-    expect(result.updatedCells, 1);
-    // Одна посылка, в ней только updateCells — структуру не трогаем.
-    expect(api.batchRequestLog, [
-      ['updateCells'],
+    // Отметка на весь день стоит в каждой колонке пары дня: у 9 ноября
+    // их три, все три покрашены.
+    for (var offset = 0; offset < 3; offset++) {
+      final cell = api.cell(tabTitle, 3, blockStart(9) + offset);
+      expect(cell.backgroundColor, 0x00CC00, reason: 'колонка $offset');
+      expect(cell.value, isNull);
+    }
+    expect(result.updatedCells, 3);
+    // Одна посылка updateCells — структуру не трогаем.
+    expect(api.batchRequestLog, hasLength(1));
+    expect(api.batchRequestLog.single, everyElement('updateCells'));
+  });
+
+  test('отдельная отметка пары не тронута отметкой на весь день', () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+      alexey,
+      maria,
     ]);
+    final service = JournalSyncService(api);
+
+    await service.push(
+      spreadsheetId: 'sid',
+      mapping: mapping,
+      sessions: [
+        session({
+          // Весь день: пришёл на все пары.
+          '1': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+          ),
+          // Но на второй паре — опоздал: время важнее общей отметки.
+          '1|mon-2': AttendanceEntry(
+            status: AttendanceStatus.late,
+            markedAt: DateTime(2026, 11, 9, 9, 40),
+            lessonKey: 'mon-2',
+            lessonTitle: 'Понедельничная пара 2',
+          ),
+        }),
+      ],
+      schedule: scheduleWith(),
+    );
+
+    final first = api.cell(tabTitle, 3, blockStart(9));
+    expect(first.backgroundColor, 0x00CC00); // пришёл
+    final second = api.cell(tabTitle, 3, blockStart(9) + 1);
+    expect(second.backgroundColor, 0xFF9900); // опоздал, время сохранилось
+    expect(second.value, '9:40');
+    final third = api.cell(tabTitle, 3, blockStart(9) + 2);
+    expect(third.backgroundColor, 0x00CC00); // пришёл
   });
 
   test('опоздание пишется во вторую пару цветом и временем', () async {
@@ -177,6 +219,9 @@ void main() {
     final cell = api.cell(tabTitle, 4, blockStart(9));
     expect(cell.backgroundColor, 0xFF0000);
     expect(cell.value, 'Н');
+    // «Н» стоит в каждой колонке пары дня.
+    expect(api.cell(tabTitle, 4, blockStart(9) + 1).value, 'Н');
+    expect(api.cell(tabTitle, 4, blockStart(9) + 2).value, 'Н');
     // Строка Алексея не тронута.
     expect(api.cell(tabTitle, 3, blockStart(9)).backgroundColor, isNull);
   });
@@ -328,6 +373,52 @@ void main() {
     );
   });
 
+  test('пары нет в строке пар — отправка останавливается с подсказкой',
+      () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+      alexey,
+      maria,
+    ]);
+    // У дня 9 в строке пар стираем номер третьей колонки: пары 3 в
+    // таблице больше нет, хотя по расписанию она есть.
+    final override = List<List<SeedCell?>>.generate(3, (_) => <SeedCell?>[]);
+    override[2] = List<SeedCell?>.filled(40, null);
+    override[2][blockStart(9) + 2] = api.seedCell();
+    api.seedSheet(tabTitle, override);
+
+    final service = JournalSyncService(api);
+    await expectLater(
+      service.push(
+        spreadsheetId: 'sid',
+        mapping: const JournalMapping(
+          tabTitle: tabTitle,
+          dayRow: 1,
+          fioColumn: 1,
+          firstStudentRow: 3,
+          pairRow: 2,
+        ),
+        sessions: [
+          session({
+            '1|mon-3': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 9, 9),
+              lessonKey: 'mon-3',
+            ),
+          }),
+        ],
+        schedule: scheduleWith(),
+      ),
+      throwsA(
+        isA<CloudSyncException>().having(
+          (error) => error.message,
+          'message',
+          contains('Пары 3 нет в дне 9'),
+        ),
+      ),
+    );
+  });
+
   test('загрузка читает список по ФИО и отметки по парам', () async {
     final api = FakeSheetsApi();
     seedJournal(
@@ -365,17 +456,263 @@ void main() {
       roster.students.map((student) => student.fullName),
       ['Алексей Морозов', 'Мария Соколова'],
     );
-    // Первая колонка блока — отметка на весь день.
+    // Первая колонка блока — пара 1 из расписания.
     final alexeyEntries = roster.entries[9]!;
-    expect(alexeyEntries['Алексей Морозов']!.status, AttendanceStatus.late);
-    expect(alexeyEntries['Алексей Морозов']!.markedAt, DateTime(2026, 11, 9, 9, 40));
-    expect(alexeyEntries['Алексей Морозов']!.lessonKey, isNull);
-    // Вторая колонка — пара из расписания.
+    final alexeyFirst = alexeyEntries['Алексей Морозов|mon-1'];
+    expect(alexeyFirst, isNotNull);
+    expect(alexeyFirst!.status, AttendanceStatus.late);
+    expect(alexeyFirst.markedAt, DateTime(2026, 11, 9, 9, 40));
+    expect(alexeyFirst.lessonKey, 'mon-1');
+    expect(alexeyFirst.lessonTitle, 'Понедельничная пара 1');
+    // Вторая колонка — пара 2 из расписания.
     final mariaEntry = alexeyEntries['Мария Соколова|mon-2'];
     expect(mariaEntry, isNotNull);
     expect(mariaEntry!.status, AttendanceStatus.came);
     expect(mariaEntry.lessonKey, 'mon-2');
     expect(mariaEntry.lessonTitle, 'Понедельничная пара 2');
+  });
+
+  test('без расписания ключи пар берутся из строки пар таблицы', () async {
+    final api = FakeSheetsApi();
+    seedJournal(
+      api,
+      month: month,
+      pairsByDay: pairsByDay,
+      students: const [alexey, maria],
+      marks: {
+        9: {
+          'Алексей Морозов': {
+            2: AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 9, 9),
+            ),
+          },
+        },
+      },
+    );
+    final service = JournalSyncService(api);
+
+    final roster = await service.read(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+      month: month,
+      // Расписания нет — номера пар берутся из строки «ПАРА».
+    );
+
+    final alexeyEntries = roster.entries[9]!;
+    expect(alexeyEntries.keys, ['Алексей Морозов|pair-2']);
+    expect(alexeyEntries['Алексей Морозов|pair-2']!.lessonTitle, 'Пара 2');
+  });
+
+  test('номера пар читаются из строки «ПАРА» даже со сдвигом', () async {
+    final api = FakeSheetsApi();
+    seedJournal(
+      api,
+      month: month,
+      pairsByDay: pairsByDay,
+      students: const [alexey],
+      marks: {
+        9: {
+          'Алексей Морозов': {
+            2: AttendanceEntry(
+              status: AttendanceStatus.late,
+              markedAt: DateTime(2026, 11, 9, 9, 30),
+            ),
+          },
+        },
+      },
+    );
+    // Строка пар дня 9: первая колонка блока без номера (колонка «на
+    // весь день»), пары 2 и 3 — во второй и третьей колонках.
+    final override = List<List<SeedCell?>>.generate(3, (_) => <SeedCell?>[]);
+    override[2] = [
+      ...List<SeedCell?>.filled(40, null),
+    ];
+    override[2][blockStart(9)] = api.seedCell(); // стираем номер первой
+    override[2][blockStart(9) + 1] = api.seedCell(value: 2);
+    override[2][blockStart(9) + 2] = api.seedCell(value: 3);
+    api.seedSheet(tabTitle, override);
+
+    final service = JournalSyncService(api);
+    final roster = await service.read(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+      month: month,
+    );
+
+    final alexeyEntries = roster.entries[9]!;
+    // Отметка стоит во второй колонке блока — строка пар говорит, что
+    // это пара 2; колонка без номера парами не считается.
+    expect(alexeyEntries.keys, ['Алексей Морозов|pair-2']);
+    expect(
+      alexeyEntries['Алексей Морозов|pair-2']!.markedAt,
+      DateTime(2026, 11, 9, 9, 30),
+    );
+  });
+
+  test('отметка на весь день раскладывается по парам из строки «ПАРА»',
+      () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+      alexey,
+    ]);
+    // У дня 9 в строке пар только числа 1 и 2: третья колонка блока —
+    // не пара, и отметка на весь день её не трогает.
+    final override = List<List<SeedCell?>>.generate(3, (_) => <SeedCell?>[]);
+    override[2] = List<SeedCell?>.filled(40, null);
+    override[2][blockStart(9) + 2] = api.seedCell(); // стираем номер
+    api.seedSheet(tabTitle, override);
+
+    final service = JournalSyncService(api);
+    await service.push(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+      sessions: [
+        session({
+          '1': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+          ),
+        }),
+      ],
+    );
+
+    // Пары дня — колонки с номерами в строке пар: их две.
+    expect(
+      api.cell(tabTitle, 3, blockStart(9)).backgroundColor,
+      0x00CC00,
+    );
+    expect(
+      api.cell(tabTitle, 3, blockStart(9) + 1).backgroundColor,
+      0x00CC00,
+    );
+    // Третья колонка не пара — осталась пустой.
+    expect(
+      api.cell(tabTitle, 3, blockStart(9) + 2).backgroundColor,
+      isNull,
+    );
+  });
+
+  test('отметка на весь день не разливается на колонки за блоком',
+      () async {
+    final api = FakeSheetsApi();
+    // Маленький журнал: день 1 — 1 колонка, день 2 — 2 колонки, но сам
+    // лист шириной 10: справа от последнего блока пустые колонки.
+    final empty = List<SeedCell?>.filled(10, null);
+    final numbers = [...empty];
+    numbers[1] = api.seedCell(value: '№');
+    numbers[2] = api.seedCell(value: 1);
+    numbers[3] = api.seedCell(value: 2);
+    final pairs = [...empty];
+    pairs[1] = api.seedCell(value: 'ПАРА');
+    pairs[2] = api.seedCell(value: 1);
+    pairs[3] = api.seedCell(value: 1);
+    pairs[4] = api.seedCell(value: 2);
+    final student = [...empty];
+    student[1] = api.seedCell(value: 'Алексей Морозов');
+    api.seedSheet(tabTitle, [empty, numbers, pairs, student]);
+
+    final service = JournalSyncService(api);
+    final result = await service.push(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+      sessions: [
+        AttendanceSession(
+          groupName: 'БИТ-24-03',
+          date: DateTime(2026, 11, 2),
+          students: const [alexey],
+          entries: {
+            '1': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 2, 9),
+            ),
+          },
+        ),
+      ],
+      // Расписания нет: пары дня — по строке «ПАРА».
+    );
+
+    // У дня 2 две колонки пар, зелёная отметка ровно в них.
+    expect(result.updatedCells, 2);
+    expect(api.cell(tabTitle, 3, 3).backgroundColor, 0x00CC00);
+    expect(api.cell(tabTitle, 3, 4).backgroundColor, 0x00CC00);
+    // Пустые колонки за блоком не тронуты.
+    expect(api.cell(tabTitle, 3, 5).backgroundColor, isNull);
+    expect(api.cell(tabTitle, 3, 9).backgroundColor, isNull);
+  });
+
+  test('конечная строка ФИО ограничивает список группы', () async {
+    final api = FakeSheetsApi();
+    seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+      alexey,
+      maria,
+    ]);
+    // Под списком группы в таблице живут итоги и примечания — конечная
+    // строка ФИО отсекает их от списка.
+    final junk = List<List<SeedCell?>>.generate(7, (_) => <SeedCell?>[]);
+    junk[5] = [null, api.seedCell(value: 'Итого')];
+    junk[6] = [null, api.seedCell(value: 'Примечания')];
+    api.seedSheet(tabTitle, junk);
+
+    final service = JournalSyncService(api);
+    final roster = await service.read(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+        lastStudentRow: 4, // Мария на строке 0-based 4 — последняя.
+      ),
+      month: month,
+    );
+
+    expect(
+      roster.students.map((student) => student.fullName),
+      ['Алексей Морозов', 'Мария Соколова'],
+    );
+
+    // Без конечной строки «Итого» попал бы в список.
+    final unbounded = await service.read(
+      spreadsheetId: 'sid',
+      mapping: const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+        pairRow: 2,
+      ),
+      month: month,
+    );
+    expect(
+      unbounded.students.map((student) => student.fullName),
+      contains('Итого'),
+    );
   });
 
   test('месяц подбирается из названия листа «МЕСЯЦ : ГОД»', () async {

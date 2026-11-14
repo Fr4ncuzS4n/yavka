@@ -141,7 +141,44 @@ class JournalSyncService {
         );
       }
 
+      // План записи: (строка, колонка) → желаемое состояние ячейки.
+      // Сначала раскладываются отметки на весь день, потом конкретные
+      // пары переписывают свои колонки — частная отметка важнее общей.
+      final plan = <(int, int), (int?, String?)>{};
+
+      // Пары дня для отметки «на весь день»: по расписанию, если оно
+      // есть, иначе все колонки пар из строки «ПАРА» таблицы.
+      final schedulePairs =
+          schedule?.lessonsFor(weekdayOf(session.date)).length ?? 0;
+      final wholeDayPairs = schedulePairs > 0
+          ? [
+              for (var pair = 1; pair <= schedulePairs; pair++)
+                if (span.hasPair(pair)) pair,
+            ]
+          : span.pairs;
+
       for (final item in session.entries.entries) {
+        final entry = item.value;
+        if (!_isWholeDay(entry)) continue;
+        final studentId = item.key.split('|').first;
+        final row = _rowOfStudent(session, studentId, rowsOfStudent);
+        if (row == null) {
+          throw CloudSyncException(
+            'Студента «${_displayName(session, studentId)}» нет в журнале. '
+            'Добавьте его в таблицу вручную — приложение не меняет список.',
+          );
+        }
+        // Отметка на весь день означает «пришёл/не пришёл на все пары»:
+        // она раскладывается в каждую колонку пары этого дня.
+        final desired = _desiredCell(entry);
+        for (final pair in wholeDayPairs) {
+          plan[(row, span.columnOfPair(pair))] = desired;
+        }
+      }
+
+      for (final item in session.entries.entries) {
+        final entry = item.value;
+        if (_isWholeDay(entry)) continue;
         final studentId = item.key.split('|').first;
         final row = _rowOfStudent(session, studentId, rowsOfStudent);
         if (row == null) {
@@ -151,17 +188,21 @@ class JournalSyncService {
           );
         }
 
-        final pair = _pairNumberOf(item.value, session.date, schedule) ?? 1;
-        if (!span.hasPair(pair)) {
+        // Пары, отмеченные отдельно, не трогаем общей отметкой.
+        final pair = _pairNumberOf(entry, session.date, schedule) ?? 1;
+        final column = span.columnOfPairOrNull(pair);
+        if (column == null) {
           throw CloudSyncException(
-            'Пары $pair нет в дне ${session.date.day}: в блоке только '
-            '${span.width} колонок. Проверьте таблицу или расписание.',
+            'Пары $pair нет в дне ${session.date.day}: в строке пар для '
+            'неё нет колонки. Проверьте таблицу или расписание.',
           );
         }
-        final column = span.columnOfPair(pair);
-        if (column >= grid.colCount) continue;
+        plan[(row, column)] = _desiredCell(entry);
+      }
 
-        final desired = _desiredCell(item.value);
+      for (final MapEntry(key: (row, column), value: desired)
+          in plan.entries) {
+        if (column >= grid.colCount) continue;
         if (_sameCell(grid.cell(row, column), desired)) continue;
         updatedCells++;
         requests.add(
@@ -200,11 +241,8 @@ class JournalSyncService {
 
     final students = <Student>[];
     final entries = <int, Map<String, AttendanceEntry>>{};
-    for (
-      var row = mapping.firstStudentRow;
-      row < grid.rows.length;
-      row++
-    ) {
+    final lastRow = _lastStudentRow(grid, mapping);
+    for (var row = mapping.firstStudentRow; row <= lastRow; row++) {
       final fullName =
           grid.cell(row, mapping.fioColumn).value?.toString().trim() ?? '';
       if (fullName.isEmpty || fullName == 'ФИО') continue;
@@ -215,8 +253,11 @@ class JournalSyncService {
       if (layout == null) continue;
       for (final span in layout.spans) {
         final date = DateTime(month.year, month.month, span.day);
-        for (var pair = 1; pair <= span.width; pair++) {
-          final cell = grid.cell(row, span.columnOfPair(pair));
+        // Каждая колонка пары — отметка на конкретную пару; номер пары
+        // берётся из строки «ПАРА» (или по смещению, если её нет).
+        for (final pair in span.pairs) {
+          final column = span.columnOfPair(pair);
+          final cell = grid.cell(row, column);
           if (cell.isEmpty) continue;
           final parsed = JournalCellCodec.decodeCell(
             cell.backgroundColor,
@@ -224,8 +265,6 @@ class JournalSyncService {
             date,
           );
           if (parsed == null) continue;
-          // Первая колонка блока — отметка на весь день; остальные —
-          // конкретные пары: ключ пары берём из расписания.
           final lesson = _lessonOf(date, pair, schedule);
           final entry = AttendanceEntry(
             status: parsed.status,
@@ -247,27 +286,39 @@ class JournalSyncService {
 
   // -- Детали ----------------------------------------------------------------
 
-  /// Ключ пары для отметки из колонки.
+  /// Последняя строка студентов: от настройки, но не дальше конца листа.
+  int _lastStudentRow(SheetGrid grid, JournalMapping mapping) {
+    final configured = mapping.lastStudentRow;
+    if (configured == null) return grid.rows.length - 1;
+    return configured.clamp(mapping.firstStudentRow, grid.rows.length - 1);
+  }
+
+  /// Ключ пары для колонки с номером [pairNumber].
   ///
-  /// Первая колонка блока — отметка на весь день (без ключа пары);
-  /// остальные — пары по расписанию, а за их пределами — «Пара N».
+  /// Пары берутся из расписания; если расписания для этого дня нет,
+  /// колонка подписывается «Пара N» — номер из строки пар таблицы.
   (String?, String?) _lessonOf(
     DateTime date,
-    int pair,
+    int pairNumber,
     ScheduleController? schedule,
   ) {
-    if (pair <= 1) return (null, null);
-    if (schedule == null) return ('pair-$pair', 'Пара $pair');
-    final lessons = schedule.lessonsFor(weekdayOf(date));
-    if (pair <= lessons.length) {
-      return (lessons[pair - 1].id, lessons[pair - 1].subject);
+    final lessons = schedule == null
+        ? const <ScheduleLesson>[]
+        : schedule.lessonsFor(weekdayOf(date));
+    if (pairNumber >= 1 && pairNumber <= lessons.length) {
+      return (lessons[pairNumber - 1].id, lessons[pairNumber - 1].subject);
     }
-    return ('pair-$pair', 'Пара $pair');
+    return ('pair-$pairNumber', 'Пара $pairNumber');
+  }
+
+  /// Отметка на весь день: без ключа и названия пары.
+  bool _isWholeDay(AttendanceEntry entry) {
+    final key = entry.lessonKey?.trim() ?? '';
+    final title = entry.lessonTitle?.trim() ?? '';
+    return key.isEmpty && title.isEmpty;
   }
 
   /// Номер пары для отметки: из расписания по ключу, «pair-N» или названию.
-  ///
-  /// Отметка на весь день попадает в первую пару дня.
   int? _pairNumberOf(
     AttendanceEntry entry,
     DateTime date,
@@ -350,9 +401,13 @@ class JournalSyncService {
   }
 
   /// Строки студентов по ФИО из колонки ФИО.
+  ///
+  /// Список читается от первой строки студентов до конечной строки ФИО
+  /// (или до конца листа, если конечная строка не задана).
   Map<String, int> _rowsOfStudents(SheetGrid grid, JournalMapping mapping) {
     final rows = <String, int>{};
-    for (var row = mapping.firstStudentRow; row < grid.rows.length; row++) {
+    final lastRow = _lastStudentRow(grid, mapping);
+    for (var row = mapping.firstStudentRow; row <= lastRow; row++) {
       final fullName =
           grid.cell(row, mapping.fioColumn).value?.toString().trim() ?? '';
       if (fullName.isEmpty || fullName == 'ФИО') continue;
