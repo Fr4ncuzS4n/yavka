@@ -10,7 +10,13 @@ import '../../models/attendance_status.dart';
 /// - красная заливка + буква «Н» — «не пришёл»;
 /// - синяя заливка — «по уважительной причине».
 abstract final class JournalCellCodec {
-  static const cameColor = Color(0xFF00CC00); // зелёная
+  /// Зелёный из стандартной палитры Google Таблиц — тот, что Google
+  /// даёт при выборе простого «Зелёного» в цвете заливки.
+  static const cameColor = Color(0xFF00FF00);
+
+  /// Зелёный, который писала ранняя версия приложения; журналы с ним
+  /// продолжают читаться.
+  static const legacyCameColor = Color(0xFF00CC00);
   static const lateColor = Color(0xFFFF9900); // оранжевая
   static const absentColor = Color(0xFFFF0000); // красная
   static const excusedColor = Color(0xFF4472C4); // синяя
@@ -31,6 +37,9 @@ abstract final class JournalCellCodec {
     for (final status in AttendanceStatus.values) {
       if (matchesColor(rgb, colorFor(status))) return status;
     }
+    // Старые отметки приложения пишем в новый зелёный при первой
+    // отправке, но читаем их, пока журнал не перезаписан.
+    if (matchesColor(rgb, legacyCameColor)) return AttendanceStatus.came;
     return null;
   }
 

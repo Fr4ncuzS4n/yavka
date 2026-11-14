@@ -177,7 +177,7 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
       setState(() {
         _error = 'Заполните поля: лист, строку чисел, колонку ФИО, '
             'строку первого студента и строку с номерами пар; '
-            'конечную строку ФИО можно оставить пустой.';
+            'конечную строку студентов можно оставить пустой.';
       });
       return null;
     }
@@ -190,8 +190,8 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
     }
     if (lastStudentRow != null && lastStudentRow < firstStudentRow) {
       setState(() {
-        _error = 'Конечная строка ФИО не может быть выше строки первого '
-            'студента.';
+        _error = 'Конечная строка студентов не может быть выше строки '
+            'первого студента.';
       });
       return null;
     }
@@ -348,7 +348,7 @@ class _JournalSetupScreenState extends State<JournalSetupScreen> {
                       controller: _lastStudentRowController,
                       keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
-                        labelText: 'Конечная строка ФИО',
+                        labelText: 'Конечная строка студентов',
                         helperText: 'Последняя строка списка группы; '
                             'пусто — до конца листа',
                         border: OutlineInputBorder(),

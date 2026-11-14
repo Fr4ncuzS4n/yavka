@@ -191,15 +191,15 @@ void main() {
     // Отметка «пришёл» легла во все колонки пар блока 9 ноября.
     expect(
       env.api.cell(tabTitle, 3, blockStart(9)).backgroundColor,
-      0x00CC00,
+      0x00FF00,
     );
     expect(
       env.api.cell(tabTitle, 3, blockStart(9) + 1).backgroundColor,
-      0x00CC00,
+      0x00FF00,
     );
     expect(
       env.api.cell(tabTitle, 3, blockStart(9) + 2).backgroundColor,
-      0x00CC00,
+      0x00FF00,
     );
     // Писались только ячейки: никаких updateSheetProperties/mergeCells.
     for (final batch in env.api.batchRequestLog) {
@@ -311,6 +311,59 @@ void main() {
       env.attendance.students.map((student) => student.fullName),
       contains(maria.fullName),
     );
+  });
+
+  test('студенты вне диапазона журнала удаляются из списка', () async {
+    const stranger = Student(id: '3', fullName: 'Пётр Чужой');
+    final attendance = AttendanceController(
+      session: AttendanceSession(
+        groupName: group,
+        date: date,
+        students: const [alexey, maria, stranger],
+        entries: {
+          '3': AttendanceEntry(
+            status: AttendanceStatus.came,
+            markedAt: DateTime(2026, 11, 9, 9),
+          ),
+        },
+      ),
+    );
+    final api = FakeSheetsApi();
+    final cloud = CloudSyncController(
+      attendance: attendance,
+      auth: GoogleAuthService(
+        flow: FakeOAuthFlow(),
+        tokenStore: MemoryTokenStore(),
+      ),
+      sheetsApi: api,
+      settingsStore: MemoryCloudSettingsStore(
+        const CloudSettings(
+          clientId: 'test-client-id.apps.googleusercontent.com',
+          clientSecret: 'test-secret',
+        ),
+      ),
+      isWeb: false,
+      schedule: scheduleWith(),
+    );
+    await connectJournal(cloud, api);
+    await cloud.saveJournalMapping(
+      const JournalMapping(
+        tabTitle: tabTitle,
+        dayRow: 1,
+        fioColumn: 1,
+        firstStudentRow: 3,
+      ),
+    );
+
+    // Петра в журнале нет — он уходит из списка вместе с отметкой.
+    expect(cloud.error, isNull);
+    expect(
+      attendance.students.map((student) => student.fullName),
+      ['Алексей Морозов', 'Мария Соколова'],
+    );
+    expect(attendance.entryFor('3'), isNull);
+    // Знакомые студенты остаются со своими идентификаторами.
+    expect(attendance.students.first.id, '1');
   });
 
   test('название без месяца — понятная ошибка вместо записи', () async {

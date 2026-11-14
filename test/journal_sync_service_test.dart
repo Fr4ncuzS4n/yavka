@@ -10,6 +10,7 @@ import 'package:yavka/models/attendance_status.dart';
 import 'package:yavka/models/schedule_lesson.dart';
 import 'package:yavka/models/student.dart';
 import 'package:yavka/services/cloud/cloud_exceptions.dart';
+import 'package:yavka/services/cloud/journal_cell_codec.dart';
 import 'package:yavka/services/cloud/journal_mapping.dart';
 import 'package:yavka/services/cloud/journal_sync_service.dart';
 
@@ -89,7 +90,7 @@ void main() {
     // их три, все три покрашены.
     for (var offset = 0; offset < 3; offset++) {
       final cell = api.cell(tabTitle, 3, blockStart(9) + offset);
-      expect(cell.backgroundColor, 0x00CC00, reason: 'колонка $offset');
+      expect(cell.backgroundColor, 0x00FF00, reason: 'колонка $offset');
       expect(cell.value, isNull);
     }
     expect(result.updatedCells, 3);
@@ -129,12 +130,12 @@ void main() {
     );
 
     final first = api.cell(tabTitle, 3, blockStart(9));
-    expect(first.backgroundColor, 0x00CC00); // пришёл
+    expect(first.backgroundColor, 0x00FF00); // пришёл
     final second = api.cell(tabTitle, 3, blockStart(9) + 1);
     expect(second.backgroundColor, 0xFF9900); // опоздал, время сохранилось
     expect(second.value, '9:40');
     final third = api.cell(tabTitle, 3, blockStart(9) + 2);
-    expect(third.backgroundColor, 0x00CC00); // пришёл
+    expect(third.backgroundColor, 0x00FF00); // пришёл
   });
 
   test('опоздание пишется во вторую пару цветом и временем', () async {
@@ -598,11 +599,11 @@ void main() {
     // Пары дня — колонки с номерами в строке пар: их две.
     expect(
       api.cell(tabTitle, 3, blockStart(9)).backgroundColor,
-      0x00CC00,
+      0x00FF00,
     );
     expect(
       api.cell(tabTitle, 3, blockStart(9) + 1).backgroundColor,
-      0x00CC00,
+      0x00FF00,
     );
     // Третья колонка не пара — осталась пустой.
     expect(
@@ -658,14 +659,14 @@ void main() {
 
     // У дня 2 две колонки пар, зелёная отметка ровно в них.
     expect(result.updatedCells, 2);
-    expect(api.cell(tabTitle, 3, 3).backgroundColor, 0x00CC00);
-    expect(api.cell(tabTitle, 3, 4).backgroundColor, 0x00CC00);
+    expect(api.cell(tabTitle, 3, 3).backgroundColor, 0x00FF00);
+    expect(api.cell(tabTitle, 3, 4).backgroundColor, 0x00FF00);
     // Пустые колонки за блоком не тронуты.
     expect(api.cell(tabTitle, 3, 5).backgroundColor, isNull);
     expect(api.cell(tabTitle, 3, 9).backgroundColor, isNull);
   });
 
-  test('конечная строка ФИО ограничивает список группы', () async {
+  test('конечная строка студентов ограничивает список группы', () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
       alexey,
@@ -826,5 +827,17 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('зелёный «пришёл» — зелёный из палитры Google', () {
+    // В заливку идёт RGB без альфа-канала — как его хранит таблица.
+    expect(JournalCellCodec.cellColor(AttendanceStatus.came), 0x00FF00);
+    // Зелёный, который даёт Google при выборе «Зелёного», читается.
+    expect(JournalCellCodec.statusFromColor(0x00FF00), AttendanceStatus.came);
+    // Зелёный ранних версий приложения тоже читается: старые отметки
+    // журнала не пропадут, а при следующей отправке перезапишутся.
+    expect(JournalCellCodec.statusFromColor(0x00CC00), AttendanceStatus.came);
+    // Другие цвета палитры Google «пришедшим» не считаются.
+    expect(JournalCellCodec.statusFromColor(0x00FFFF), isNull);
   });
 }

@@ -409,7 +409,9 @@ class CloudSyncController extends ChangeNotifier {
 
     _applyingRemote = true;
     try {
-      attendance.mergeRoster(roster.students);
+      // Список группы выравнивается по журналу: студенты вне диапазона
+      // строк журнала уходят из списка вместе со своими отметками.
+      attendance.alignRoster(roster.students);
       final known = attendance.students;
       attendance.mergeRemote([
         for (final day in roster.entries.entries)

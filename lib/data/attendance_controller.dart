@@ -216,6 +216,28 @@ class AttendanceController extends ChangeNotifier {
     _persist();
   }
 
+  /// Выравнивает список группы по журналу во всех сессиях: студенты,
+  /// которых в [roster] нет, удаляются из списка вместе со своими
+  /// отметками (журнал — источник правды о списке). Пустой [roster]
+  /// список не трогает: пустой журнал — не повод стирать группу.
+  void alignRoster(Iterable<Student> roster) {
+    final incoming = roster.toList();
+    if (incoming.isEmpty) return;
+
+    var days = _days;
+    var changed = false;
+    for (final entry in _days.entries) {
+      final aligned = entry.value.alignedToRoster(incoming);
+      if (identical(aligned, entry.value)) continue;
+      days = {...days, entry.key: aligned};
+      changed = true;
+    }
+    if (!changed) return;
+    _days = days;
+    notifyListeners();
+    _persist();
+  }
+
   /// Полностью заменяет сессию дня (например, после загрузки из таблицы).
   void replaceSession(AttendanceSession session) {
     final day = dateOnly(session.date);

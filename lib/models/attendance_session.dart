@@ -266,6 +266,54 @@ class AttendanceSession {
     return copyWith(students: List<Student>.unmodifiable(merged));
   }
 
+  /// Выравнивает список группы по списку из журнала.
+  ///
+  /// Работает как [withRoster] — новых добавляет, знакомых обновляет —
+  /// и вдобавок убирает студентов, которых в журнале нет, вместе с их
+  /// отметками: журнал — источник правды о списке, студент вне его
+  /// диапазона строк в список не попадает (например, строка «Итого»).
+  /// Пустой [roster] сессию не меняет: пустой журнал — не повод стирать
+  /// группу.
+  AttendanceSession alignedToRoster(Iterable<Student> roster) {
+    final incoming = roster
+        .where((student) => student.fullName.trim().isNotEmpty)
+        .toList();
+    if (incoming.isEmpty) return this;
+
+    // Знакомый — совпадение ФИО или идентификатора с журналом.
+    final rosterNames = <String>{
+      for (final student in incoming) _normalizeName(student.fullName),
+    };
+    final rosterIds = <String>{
+      for (final student in incoming) _normalizeName(student.id),
+    };
+
+    final removedIds = <String>{};
+    final keptStudents = <Student>[];
+    for (final student in students) {
+      final known = rosterNames.contains(_normalizeName(student.fullName)) ||
+          rosterIds.contains(_normalizeName(student.id));
+      if (known) {
+        keptStudents.add(student);
+      } else {
+        removedIds.add(student.id.trim());
+      }
+    }
+
+    // Отметки убранных студентов остаются без хозяина — стираем их.
+    final session = removedIds.isEmpty
+        ? this
+        : copyWith(
+            students: List<Student>.unmodifiable(keptStudents),
+            entries: {
+              for (final item in entries.entries)
+                if (!removedIds.contains(item.key.split('|').first.trim()))
+                  item.key: item.value,
+            },
+          );
+    return session.withRoster(incoming);
+  }
+
   /// Объединяет удалённые отметки с локальными (удалённые важнее).
   ///
   /// Неизвестные студенты добавляются в список группы — так таблица может
