@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
 import '../data/notification_controller.dart';
+import '../data/schedule_controller.dart';
 import '../data/ui_settings.dart';
 import '../models/attendance_entry.dart';
+import '../models/attendance_session.dart';
 import '../models/attendance_status.dart';
 import '../models/schedule_lesson.dart';
 import '../models/student.dart';
@@ -33,14 +35,17 @@ const kMarkingPanelKey = Key('marking-panel');
 /// «Непришёл» подтверждается вторым нажатием с выбором времени
 /// (по умолчанию — текущее).
 ///
-/// Если передан [lesson] — отметки ставятся на конкретную пару из
-/// расписания, а не на весь день.
+/// Над списком выбираются день и пара: отметки пишутся за выбранный день
+/// (по умолчанию — сегодня, задним числом тоже можно) и, если выбрана
+/// пара, — на конкретную пару из расписания. В выходные (суббота и
+/// воскресенье) отметки недоступны.
 class AttendanceScreen extends StatefulWidget {
   const AttendanceScreen({
     super.key,
     this.attendance,
     this.cloud,
     this.uiSettings,
+    this.schedule,
     this.lesson,
     this.notifications,
   });
@@ -56,7 +61,11 @@ class AttendanceScreen extends StatefulWidget {
   /// с шестерёнкой скрывается.
   final UiSettingsController? uiSettings;
 
-  /// Пара из расписания: отметки будут привязаны к ней.
+  /// Расписание группы: источник списка пар для выбранного дня.
+  final ScheduleController? schedule;
+
+  /// Пара из расписания, выбранная при открытии экрана. Пару можно
+  /// сменить на экране — выбор дня и пары всегда доступен.
   final ScheduleLesson? lesson;
 
   /// Уведомления о отметках других пользователей таблицы.
@@ -76,22 +85,49 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   bool _multiSelect = false;
   final Set<String> _selectedIds = <String>{};
 
+  /// День, за который ставятся отметки (по умолчанию — сегодня).
+  late DateTime _day = dateOnly(_attendance.selectedDate);
+
+  /// Выбранная пара (null — отметки на весь день).
+  String? _lessonId;
+
   @override
   void initState() {
     super.initState();
     _selectedStudentId = _attendance.students.isEmpty
         ? null
         : _attendance.students.first.id;
+    _lessonId = widget.lesson?.id;
     _attendance.addListener(_onAttendanceChanged);
+    widget.schedule?.addListener(_onScheduleChanged);
   }
 
   @override
   void dispose() {
     _attendance.removeListener(_onAttendanceChanged);
+    widget.schedule?.removeListener(_onScheduleChanged);
     super.dispose();
   }
 
   void _onAttendanceChanged() {
+    if (!mounted) return;
+    // День могли переключить с другого экрана (например, отметка пары
+    // из расписания) — синхронизируемся с контроллером.
+    if (!isSameDate(_day, _attendance.selectedDate)) {
+      setState(() {
+        _day = dateOnly(_attendance.selectedDate);
+        _absentArmed = false;
+        if (_lessonId != null &&
+            !_dayLessons.any((lesson) => lesson.id == _lessonId)) {
+          _lessonId = null;
+        }
+      });
+      return;
+    }
+    setState(() {});
+  }
+
+  void _onScheduleChanged() {
     if (mounted) setState(() {});
   }
 
@@ -115,7 +151,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   bool get _canMark =>
-      _multiSelect ? _selectedIds.isNotEmpty : _selectedStudent != null;
+      !_isWeekend &&
+      (_multiSelect ? _selectedIds.isNotEmpty : _selectedStudent != null);
+
+  /// Выбранный день — выходной: отметки недоступны.
+  bool get _isWeekend => isWeekendDate(_day);
 
   bool get _anyTargetMarked =>
       _targets.any((student) => _entryFor(student) != null);
@@ -143,8 +183,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _absentArmed = false;
       if (_multiSelect) {
         // Выходим из режима: одиночным остаётся первый из выбранных.
-        _selectedStudentId =
-            _selectedIds.isNotEmpty ? _selectedIds.first : _selectedStudentId;
+        _selectedStudentId = _selectedIds.isNotEmpty
+            ? _selectedIds.first
+            : _selectedStudentId;
         _selectedIds.clear();
         _multiSelect = false;
       } else {
@@ -170,16 +211,110 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     });
   }
 
+  // -- Выбор дня и пары ------------------------------------------------------
+
+  /// Пары расписания на выбранный день.
+  List<ScheduleLesson> get _dayLessons =>
+      widget.schedule?.lessonsFor(_day.weekday) ?? const [];
+
+  /// Выбранная пара (null — отметки на весь день).
+  ScheduleLesson? get _selectedLesson {
+    final id = _lessonId;
+    if (id == null) return null;
+    for (final lesson in _dayLessons) {
+      if (lesson.id == id) return lesson;
+    }
+    final fixed = widget.lesson;
+    if (fixed != null && fixed.id == id) return fixed;
+    return null;
+  }
+
+  /// Самая ранняя дата, за которую можно отметить (год назад).
+  DateTime get _minDay =>
+      dateOnly(DateTime.now()).subtract(const Duration(days: 365));
+
+  /// Есть ли будний день раньше выбранного (в пределах года).
+  bool get _canGoPrev => _day.isAfter(_minDay);
+
+  /// Есть ли будний день позже выбранного, но не в будущем.
+  bool get _canGoNext {
+    var day = _day.add(const Duration(days: 1));
+    while (isWeekendDate(day)) {
+      day = day.add(const Duration(days: 1));
+    }
+    return !day.isAfter(dateOnly(DateTime.now()));
+  }
+
+  /// Выбирает день; если выбранная пара не читается в новом дне —
+  /// сбрасывает её на «весь день».
+  void _setDay(DateTime day) {
+    final normalized = dateOnly(day);
+    if (isSameDate(normalized, _day)) return;
+    setState(() {
+      _day = normalized;
+      _absentArmed = false;
+      if (_lessonId != null &&
+          !_dayLessons.any((lesson) => lesson.id == _lessonId)) {
+        _lessonId = null;
+      }
+    });
+    _attendance.selectDate(normalized);
+  }
+
+  /// Сдвигает день вперёд или назад, перепрыгивая выходные.
+  void _shiftDay(int direction) {
+    var day = _day.add(Duration(days: direction));
+    while (isWeekendDate(day)) {
+      day = day.add(Duration(days: direction));
+    }
+    if (day.isAfter(dateOnly(DateTime.now()))) return;
+    if (day.isBefore(_minDay)) return;
+    _setDay(day);
+  }
+
+  void _selectLesson(String? lessonId) {
+    if (_lessonId == lessonId) return;
+    setState(() {
+      _lessonId = lessonId;
+      _absentArmed = false;
+    });
+  }
+
+  /// Диалог выбора даты: выходные и будущие дни не выбрать.
+  Future<void> _pickDay() async {
+    var initial = _day;
+    while (isWeekendDate(initial)) {
+      initial = initial.subtract(const Duration(days: 1));
+    }
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: _minDay,
+      lastDate: dateOnly(DateTime.now()),
+      selectableDayPredicate: (date) => !isWeekendDate(date),
+    );
+    if (picked == null) return;
+    _setDay(picked);
+  }
+
   void _mark(AttendanceStatus status) {
     final targets = _targets;
     if (targets.isEmpty) return;
+    // Дата отметки — выбранный день, время — момент отметки.
     final now = DateTime.now();
-    final lesson = widget.lesson;
+    final markedAt = DateTime(
+      _day.year,
+      _day.month,
+      _day.day,
+      now.hour,
+      now.minute,
+    );
+    final lesson = _selectedLesson;
     for (final student in targets) {
       _attendance.mark(
         student,
         status,
-        now,
+        markedAt,
         lessonKey: lesson?.id,
         lessonTitle: lesson?.subject,
       );
@@ -211,12 +346,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (!mounted) return;
 
     final time = pickedTime ?? TimeOfDay.fromDateTime(now);
-    final lesson = widget.lesson;
+    final lesson = _selectedLesson;
     for (final student in targets) {
       _attendance.mark(
         student,
         AttendanceStatus.absent,
-        DateTime(now.year, now.month, now.day, time.hour, time.minute),
+        DateTime(_day.year, _day.month, _day.day, time.hour, time.minute),
         lessonKey: lesson?.id,
         lessonTitle: lesson?.subject,
       );
@@ -229,8 +364,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void _clearMarks() {
     final targets = _targets;
     if (targets.isEmpty) return;
+    final lesson = _selectedLesson;
     for (final student in targets) {
-      _attendance.clearMark(student);
+      _attendance.clearMark(
+        student,
+        lessonKey: lesson?.id,
+        lessonTitle: lesson?.subject,
+      );
     }
     setState(() => _absentArmed = false);
   }
@@ -238,19 +378,19 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   /// Отмеченная пара попадает в отложенное уведомление — оно уйдёт
   /// в таблицу при следующей синхронизации, и её увидят другие.
   void _queueLessonNotification() {
-    final lesson = widget.lesson;
+    final lesson = _selectedLesson;
     final cloud = widget.cloud;
     if (lesson == null || cloud == null) return;
     cloud.notifications?.queueLessonMark(
       groupName: _attendance.session.groupName,
       lesson: lesson,
-      date: _attendance.session.date,
+      date: _day,
     );
   }
 
   /// Отметка студента с учётом режима: на паре или на весь день.
   AttendanceEntry? _entryFor(Student student) {
-    final lesson = widget.lesson;
+    final lesson = _selectedLesson;
     if (lesson == null) return _attendance.entryFor(student.id);
     return _attendance.entryInLesson(
       student.id,
@@ -261,7 +401,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   /// Сколько студентов отмечено в текущем режиме.
   int get _markedCount {
-    final lesson = widget.lesson;
+    final lesson = _selectedLesson;
     if (lesson == null) return _attendance.entries.length;
     return _attendance.session.markedCountInLesson(
       lessonKey: lesson.id,
@@ -301,10 +441,109 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             ? _buildDesktopBody()
             : Column(
                 children: [
+                  _buildDayLessonBar(),
                   Expanded(child: _buildList()),
                   _buildPanel(),
                 ],
               ),
+      ),
+    );
+  }
+
+  /// Полоса выбора дня и пары: стрелки и календарь, чипы «Весь день»
+  /// и пар расписания, предупреждение о выходном.
+  Widget _buildDayLessonBar() {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final today = dateOnly(DateTime.now());
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 880),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  IconButton(
+                    key: const Key('day-prev'),
+                    tooltip: 'Предыдущий учебный день',
+                    onPressed: _canGoPrev ? () => _shiftDay(-1) : null,
+                    icon: const Icon(Icons.chevron_left_rounded),
+                  ),
+                  Expanded(
+                    child: InkWell(
+                      key: const Key('day-label'),
+                      onTap: _pickDay,
+                      borderRadius: BorderRadius.circular(_kRowRadius),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 8,
+                        ),
+                        child: Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                _formatDate(_day),
+                                style: theme.textTheme.titleMedium,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Icon(
+                              Icons.calendar_month_outlined,
+                              size: 18,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!isSameDate(_day, today))
+                    TextButton(
+                      onPressed: () => _setDay(today),
+                      child: const Text('Сегодня'),
+                    ),
+                  IconButton(
+                    key: const Key('day-next'),
+                    tooltip: 'Следующий учебный день',
+                    onPressed: _canGoNext ? () => _shiftDay(1) : null,
+                    icon: const Icon(Icons.chevron_right_rounded),
+                  ),
+                ],
+              ),
+              if (_dayLessons.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Весь день'),
+                      selected: _lessonId == null,
+                      onSelected: (_) => _selectLesson(null),
+                    ),
+                    for (final lesson in _dayLessons)
+                      ChoiceChip(
+                        label: Text('${lesson.startLabel} · ${lesson.subject}'),
+                        selected: _lessonId == lesson.id,
+                        onSelected: (_) => _selectLesson(lesson.id),
+                      ),
+                  ],
+                ),
+              ],
+              if (_isWeekend) ...[
+                const SizedBox(height: 8),
+                const _WeekendBanner(),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -321,16 +560,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     final headerText = _multiSelect
         ? (_selectedIds.isEmpty
-            ? 'Выберите студентов'
-            : 'Выбрано: ${_selectedIds.length}')
+              ? 'Выберите студентов'
+              : 'Выбрано: ${_selectedIds.length}')
         : (single == null
-            ? 'Выберите студента'
-            : 'Отметить: ${single.fullName}');
+              ? 'Выберите студента'
+              : 'Отметить: ${single.fullName}');
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Левая колонка — заголовок, режимы и 4 кнопки отметки.
+        // Левая колонка — выбор дня и пары, заголовок, режимы и 4 кнопки.
         Container(
           key: kMarkingPanelKey,
           width: _kPanelWidth,
@@ -346,6 +585,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                _buildDayLessonBar(),
+                const SizedBox(height: 8),
                 Text(
                   headerText,
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -378,8 +619,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ),
                       Expanded(
                         child: TextButton.icon(
-                          onPressed:
-                              _selectedIds.isEmpty ? null : _clearSelection,
+                          onPressed: _selectedIds.isEmpty
+                              ? null
+                              : _clearSelection,
                           icon: const Icon(Icons.close, size: 18),
                           label: const Text('Снять выбор'),
                         ),
@@ -398,8 +640,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                   _StatusButton(
                     status: status,
                     enabled: canMark,
-                    armed:
-                        status == AttendanceStatus.absent && _absentArmed,
+                    armed: status == AttendanceStatus.absent && _absentArmed,
                     onTap: status == AttendanceStatus.absent
                         ? _markAbsent
                         : () => _mark(status),
@@ -477,7 +718,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Widget _buildTitle(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final lesson = widget.lesson;
+    final lesson = _selectedLesson;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -486,9 +727,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         const SizedBox(height: 2),
         Text(
           lesson == null
-              ? _formatDate(DateTime.now())
+              ? _formatDate(_day)
               : 'Группа ${_attendance.session.groupName} · '
-                    '${lesson.timeLabel} · ${_formatDate(DateTime.now())}',
+                    '${lesson.timeLabel} · ${_formatDate(_day)}',
           style: Theme.of(context).textTheme.bodySmall
               ?.copyWith(color: scheme.onSurfaceVariant),
         ),
@@ -498,6 +739,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   Widget _buildList() {
     final students = _attendance.students;
+    final lesson = _selectedLesson;
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 880),
@@ -506,13 +748,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
             _GroupHeader(
-              title: widget.lesson == null
+              title: lesson == null
                   ? 'Группа ${_attendance.session.groupName}'
-                  : 'Пара «${widget.lesson!.subject}»',
-              subtitle: widget.lesson == null
+                  : 'Пара «${lesson.subject}»',
+              subtitle: lesson == null
                   ? null
                   : 'Группа ${_attendance.session.groupName} · '
-                        '${widget.lesson!.timeLabel}',
+                        '${lesson.timeLabel}',
               marked: _markedCount,
               total: students.length,
             ),
@@ -547,11 +789,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
     final headerText = _multiSelect
         ? (_selectedIds.isEmpty
-            ? 'Выберите студентов'
-            : 'Выбрано: ${_selectedIds.length}')
+              ? 'Выберите студентов'
+              : 'Выбрано: ${_selectedIds.length}')
         : (single == null
-            ? 'Выберите студента'
-            : 'Отметить: ${single.fullName}');
+              ? 'Выберите студента'
+              : 'Отметить: ${single.fullName}');
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -602,7 +844,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     ),
                     Expanded(
                       child: TextButton.icon(
-                        onPressed: _selectedIds.isEmpty ? null : _clearSelection,
+                        onPressed: _selectedIds.isEmpty
+                            ? null
+                            : _clearSelection,
                         icon: const Icon(Icons.close, size: 18),
                         label: const Text('Снять выбор'),
                       ),
@@ -971,7 +1215,6 @@ class _StatusButton extends StatelessWidget {
 /// Подсказка о подтверждении отсутствия.
 class _ArmedHint extends StatelessWidget {
   const _ArmedHint();
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -992,6 +1235,36 @@ class _ArmedHint extends StatelessWidget {
           Expanded(
             child: Text(
               'Второе нажатие: выберите время или используйте текущее.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// «Выходной — отметки недоступны»: полоса на месте кнопок отметки.
+class _WeekendBanner extends StatelessWidget {
+  const _WeekendBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.weekend_rounded, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Выходной — в субботу и воскресенье отметки недоступны.',
               style: theme.textTheme.bodySmall,
             ),
           ),

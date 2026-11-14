@@ -3,21 +3,33 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:yavka/data/attendance_controller.dart';
+import 'package:yavka/data/example_group.dart';
 import 'package:yavka/main.dart';
+import 'package:yavka/models/attendance_session.dart';
 import 'package:yavka/screens/attendance_screen.dart';
 
 Future<void> _pumpTall(WidgetTester tester) async {
   tester.view.devicePixelRatio = 1.0;
   tester.view.physicalSize = const Size(412, 1300);
   addTearDown(tester.view.reset);
-  await tester.pumpWidget(const AppRoot());
+  await tester.pumpWidget(
+    AppRoot(
+      // Фиксированный понедельник: в выходные отметки запрещены.
+      attendance: AttendanceController(
+        session: AttendanceSession(
+          groupName: exampleGroupName,
+          students: exampleStudents,
+          date: DateTime(2026, 11, 9),
+        ),
+      ),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
-Finder _inList(Finder matching) => find.descendant(
-      of: find.byKey(kStudentListKey),
-      matching: matching,
-    );
+Finder _inList(Finder matching) =>
+    find.descendant(of: find.byKey(kStudentListKey), matching: matching);
 
 void main() {
   testWidgets('Кнопка «Отменить отметку» снимает отметку', (tester) async {

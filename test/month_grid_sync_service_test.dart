@@ -40,7 +40,7 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.came,
           markedAt: DateTime(2026, 11, 9, 8),
@@ -49,7 +49,7 @@ void main() {
           status: AttendanceStatus.late,
           markedAt: DateTime(2026, 11, 9, 9, 40),
         ),
-      }),
+      })],
     );
 
     expect(result.sheetCreated, isTrue);
@@ -96,10 +96,10 @@ void main() {
       ),
     });
 
-    final first = await sync.push(spreadsheetId: 'sid', month: month, session: session);
+    final first = await sync.push(spreadsheetId: 'sid', month: month, sessions: [session]);
     expect(first.sheetCreated, isTrue);
 
-    final second = await sync.push(spreadsheetId: 'sid', month: month, session: session);
+    final second = await sync.push(spreadsheetId: 'sid', month: month, sessions: [session]);
 
     expect(second.sheetCreated, isFalse);
     expect(second.appendedStudents, 0);
@@ -117,12 +117,12 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month, // НОЯБРЬ 2026: 2 + 30·4 = 122 колонки
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.came,
           markedAt: DateTime(2026, 11, 9, 8),
         ),
-      }),
+      })],
     );
 
     expect(result.sheetCreated, isTrue);
@@ -143,12 +143,12 @@ void main() {
     await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.came,
           markedAt: DateTime(2026, 11, 9, 8),
         ),
-      }),
+      })],
     );
 
     // Первый batchUpdate расширяет сетку, второй рисует шапку, третий
@@ -190,7 +190,7 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({}),
+      sessions: [sessionWith({})],
     );
 
     expect(result.sheetCreated, isFalse);
@@ -218,12 +218,12 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.late,
           markedAt: DateTime(2026, 11, 9, 9, 40),
         ),
-      }),
+      })],
     );
 
     expect(result.updatedCells, 1);
@@ -300,12 +300,12 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.came,
           markedAt: DateTime(2026, 11, 9, 8),
         ),
-      }),
+      })],
     );
 
     expect(result.sheetCreated, isFalse);
@@ -342,12 +342,12 @@ void main() {
     final result = await sync.push(
       spreadsheetId: 'sid',
       month: month,
-      session: sessionWith({
+      sessions: [sessionWith({
         '1': AttendanceEntry(
           status: AttendanceStatus.came,
           markedAt: DateTime(2026, 11, 9, 8),
         ),
-      }),
+      })],
     );
 
     // Блоки по 3 колонки: 9 ноября начинается с колонки 2 + 8·3.

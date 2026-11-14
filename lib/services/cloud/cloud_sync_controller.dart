@@ -88,8 +88,7 @@ class CloudSyncController extends ChangeNotifier {
 
   static DateTime _monthOf(DateTime date) => DateTime(date.year, date.month);
 
-  bool _hasAutoSyncInvolved() =>
-      isConfigured && isSignedIn && autoSync;
+  bool _hasAutoSyncInvolved() => isConfigured && isSignedIn && autoSync;
 
   /// Уведомления о отметках на парах (если переданы при создании).
   NotificationController? get notifications => _notifications;
@@ -243,7 +242,10 @@ class CloudSyncController extends ChangeNotifier {
     notifyListeners();
     try {
       await _settingsStore.save(
-        _settings.copyWith(sheetYear: normalized.year, sheetMonth: normalized.month),
+        _settings.copyWith(
+          sheetYear: normalized.year,
+          sheetMonth: normalized.month,
+        ),
       );
     } catch (error) {
       _error = _message(error);
@@ -303,10 +305,13 @@ class CloudSyncController extends ChangeNotifier {
     final spreadsheetId = _settings.spreadsheetId;
     if (spreadsheetId == null) return;
 
+    // В журнал уходят все отмеченные дни выбранного месяца, а не только
+    // сегодняшний: задним числом тоже можно отмечать.
+    final sessions = attendance.sessionsInMonth(_selectedMonth);
     final result = await _sync.push(
       spreadsheetId: spreadsheetId,
       month: _selectedMonth,
-      session: attendance.session,
+      sessions: sessions.isEmpty ? [attendance.session] : sessions,
     );
     _lastResult = result;
     _lastSyncAt = DateTime.now();
@@ -328,9 +333,7 @@ class CloudSyncController extends ChangeNotifier {
     try {
       await _sync.pushNotifications(
         spreadsheetId: spreadsheetId,
-        notifications: [
-          for (final item in outbox) _asNotification(item),
-        ],
+        notifications: [for (final item in outbox) _asNotification(item)],
       );
     } catch (_) {
       // Отправка не удалась — возвращаем уведомления в отложенные,
@@ -374,9 +377,24 @@ class CloudSyncController extends ChangeNotifier {
     _applyingRemote = true;
     try {
       if (remote != null) {
-        attendance.replaceSession(
-          _mergedToday(attendance.session, remote, _selectedMonth),
-        );
+        attendance.mergeRoster(remote.students);
+        attendance.mergeRemote([
+          for (final entry in remote.entries.entries)
+            for (final item in entry.value.entries)
+              AttendanceRecord(
+                groupName: attendance.session.groupName,
+                date: DateTime(
+                  _selectedMonth.year,
+                  _selectedMonth.month,
+                  entry.key,
+                ),
+                student: remote.students.firstWhere(
+                  (candidate) => candidate.id == item.key,
+                  orElse: () => Student(id: item.key, fullName: item.key),
+                ),
+                entry: item.value,
+              ),
+        ]);
       }
     } finally {
       _applyingRemote = false;
@@ -395,36 +413,6 @@ class CloudSyncController extends ChangeNotifier {
     _lastSyncAt = DateTime.now();
     _error = null;
     notifyListeners();
-  }
-
-  /// Вбирает в текущую сессию отметки листа месяца за её день.
-  AttendanceSession _mergedToday(
-    AttendanceSession local,
-    MonthSheetState remote,
-    DateTime month,
-  ) {
-    final day = local.date.day;
-    final byStudent = remote.entries[day];
-    var merged = local.withRoster(remote.students);
-    if (byStudent == null || byStudent.isEmpty) {
-      return merged;
-    }
-    final records = <AttendanceRecord>[];
-    byStudent.forEach((studentId, entry) {
-      final student = remote.students.firstWhere(
-        (item) => item.id == studentId,
-        orElse: () => Student(id: studentId, fullName: studentId),
-      );
-      records.add(
-        AttendanceRecord(
-          groupName: merged.groupName,
-          date: merged.date,
-          student: student,
-          entry: entry,
-        ),
-      );
-    });
-    return merged.mergeRemote(records);
   }
 
   Future<void> _run(Future<void> Function() action) async {

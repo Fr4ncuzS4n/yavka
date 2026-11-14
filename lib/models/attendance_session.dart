@@ -9,6 +9,10 @@ DateTime dateOnly(DateTime value) =>
 bool isSameDate(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
+/// Выходной день (суббота или воскресенье): отметки недоступны.
+bool isWeekendDate(DateTime date) =>
+    date.weekday == DateTime.saturday || date.weekday == DateTime.sunday;
+
 /// Маркер пары внутри ключа отметки: id пары или её название.
 String? lessonMarker(String? lessonKey, String? lessonTitle) {
   final key = lessonKey?.trim();

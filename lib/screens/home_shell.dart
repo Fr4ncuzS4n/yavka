@@ -58,6 +58,7 @@ class _HomeShellState extends State<HomeShell> {
           AttendanceScreen(
             attendance: _attendance,
             cloud: widget.cloud,
+            schedule: _schedule,
             notifications: _notifications,
             uiSettings: widget.uiSettings,
           ),

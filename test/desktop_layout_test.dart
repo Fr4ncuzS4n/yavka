@@ -3,7 +3,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:yavka/data/attendance_controller.dart';
+import 'package:yavka/data/example_group.dart';
 import 'package:yavka/main.dart';
+import 'package:yavka/models/attendance_session.dart';
 import 'package:yavka/screens/attendance_screen.dart';
 
 /// variant: TargetPlatformVariant.desktop() запускает каждый тест
@@ -12,7 +15,18 @@ void main() {
   testWidgets('На десктопе панель отметки слева, список справа', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
+    await tester.pumpWidget(
+      AppRoot(
+        // Фиксированный понедельник: в выходные отметки запрещены.
+        attendance: AttendanceController(
+          session: AttendanceSession(
+            groupName: exampleGroupName,
+            students: exampleStudents,
+            date: DateTime(2026, 11, 9),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     final panel = tester.getRect(find.byKey(kMarkingPanelKey));
@@ -29,7 +43,17 @@ void main() {
   testWidgets('На десктопе отметка «Пришёл» работает как обычно', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
+    await tester.pumpWidget(
+      AppRoot(
+        attendance: AttendanceController(
+          session: AttendanceSession(
+            groupName: exampleGroupName,
+            students: exampleStudents,
+            date: DateTime(2026, 11, 9),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Отметить: Алексей Морозов'), findsOneWidget);
@@ -49,7 +73,17 @@ void main() {
   testWidgets('На десктопе «Непришёл» требует подтверждения', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
+    await tester.pumpWidget(
+      AppRoot(
+        attendance: AttendanceController(
+          session: AttendanceSession(
+            groupName: exampleGroupName,
+            students: exampleStudents,
+            date: DateTime(2026, 11, 9),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('Непришёл'));

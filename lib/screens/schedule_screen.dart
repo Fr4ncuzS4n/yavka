@@ -4,6 +4,7 @@ import '../data/attendance_controller.dart';
 import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/schedule_parser.dart';
+import '../models/attendance_session.dart';
 import '../models/schedule_lesson.dart';
 import '../theme/app_theme.dart';
 import 'attendance_screen.dart';
@@ -65,7 +66,10 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final today = DateTime.now().weekday;
+    final today = DateTime.now();
+    // Сегодня выходной: отметки на парах недоступны (сб и вс).
+    final canMarkToday =
+        today.weekday != DateTime.saturday && today.weekday != DateTime.sunday;
 
     return Scaffold(
       appBar: AppBar(
@@ -119,14 +123,14 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                     _DayPage(
                       key: ValueKey('day-$weekday'),
                       weekday: weekday,
-                      isToday: weekday == today,
+                      isToday: weekday == today.weekday,
+                      canMarkToday: weekday == today.weekday && canMarkToday,
                       lessons: widget.schedule.lessonsFor(weekday),
                       schedule: widget.schedule,
                       attendance: widget.attendance,
                       notifications: widget.notifications,
                       onPaste: () => _pasteDocument(context, weekday: weekday),
-                      onAdd: () =>
-                          _editLesson(context, weekday: weekday),
+                      onAdd: () => _editLesson(context, weekday: weekday),
                     ),
                 ],
               ),
@@ -138,15 +142,13 @@ class _ScheduleScreenState extends State<ScheduleScreen>
   }
 
   /// Вставить документ с расписанием.
-  Future<void> _pasteDocument(
-    BuildContext context, {
-    int? weekday,
-  }) async {
+  Future<void> _pasteDocument(BuildContext context, {int? weekday}) async {
     final schedule = widget.schedule;
     final messenger = ScaffoldMessenger.of(context);
     final result = await showDialog<PasteOutcome>(
       context: context,
-      builder: (_) => _PasteDialog(fallbackWeekday: weekday ?? _selectedWeekday),
+      builder: (_) =>
+          _PasteDialog(fallbackWeekday: weekday ?? _selectedWeekday),
     );
     if (result == null || !mounted) return;
 
@@ -194,7 +196,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     } else {
       schedule.update(lesson);
     }
-  }}
+  }
+}
 
 /// Результат диалога вставки документа.
 class PasteOutcome {
@@ -304,12 +307,12 @@ class _PasteDialogState extends State<_PasteDialog> {
           onPressed: _controller.text.trim().isEmpty
               ? null
               : () => Navigator.of(context).pop(
-                    PasteOutcome(
-                      text: _controller.text,
-                      weekday: _weekday,
-                      replace: _replace,
-                    ),
+                  PasteOutcome(
+                    text: _controller.text,
+                    weekday: _weekday,
+                    replace: _replace,
                   ),
+                ),
           child: const Text('Вставить'),
         ),
       ],
@@ -430,7 +433,9 @@ class _LessonDialogState extends State<_LessonDialog> {
   @override
   Widget build(BuildContext context) {
     final startLabel = _start == null ? 'Начало' : formatMinutes(_start!);
-    final endLabel = _end == null ? 'Конец (необязательно)' : formatMinutes(_end!);
+    final endLabel = _end == null
+        ? 'Конец (необязательно)'
+        : formatMinutes(_end!);
 
     return AlertDialog(
       title: Text(widget.existing == null ? 'Новая пара' : 'Изменить пару'),
@@ -526,6 +531,7 @@ class _DayPage extends StatelessWidget {
     super.key,
     required this.weekday,
     required this.isToday,
+    required this.canMarkToday,
     required this.lessons,
     required this.schedule,
     required this.attendance,
@@ -536,6 +542,9 @@ class _DayPage extends StatelessWidget {
 
   final int weekday;
   final bool isToday;
+
+  /// Можно ли отметить пары этого дня: только сегодня и только в будни.
+  final bool canMarkToday;
   final List<ScheduleLesson> lessons;
   final ScheduleController schedule;
   final AttendanceController? attendance;
@@ -555,15 +564,20 @@ class _DayPage extends StatelessWidget {
           children: [
             _DayHeader(weekday: weekday, isToday: isToday),
             const SizedBox(height: 12),
+            if (isToday && !canMarkToday) ...[
+              const _WeekendNotice(),
+              const SizedBox(height: 12),
+            ],
             for (var i = 0; i < lessons.length; i++) ...[
               if (i > 0) const SizedBox(height: 8),
               _LessonCard(
                 lesson: lessons[i],
                 isToday: isToday,
+                canMark: canMarkToday,
                 schedule: schedule,
                 attendance: attendance,
                 notifications: notifications,
-                onTap: isToday
+                onTap: canMarkToday
                     ? () => _openLesson(context, lessons[i])
                     : null,
               ),
@@ -589,13 +603,46 @@ class _DayPage extends StatelessWidget {
   void _openLesson(BuildContext context, ScheduleLesson lesson) {
     final attendance = this.attendance;
     if (attendance == null) return;
+    // Пара открыта с сегодняшнего дня — отметки идут за сегодня.
+    attendance.selectDate(dateOnly(DateTime.now()));
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => AttendanceScreen(
           attendance: attendance,
+          schedule: schedule,
           lesson: lesson,
           notifications: notifications,
         ),
+      ),
+    );
+  }
+}
+
+/// Подсказка на вкладке дня: сегодня выходной, отметки недоступны.
+class _WeekendNotice extends StatelessWidget {
+  const _WeekendNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.weekend_rounded, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Сегодня выходной — отметки посещаемости недоступны.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -641,6 +688,7 @@ class _LessonCard extends StatelessWidget {
   const _LessonCard({
     required this.lesson,
     required this.isToday,
+    required this.canMark,
     required this.schedule,
     required this.attendance,
     required this.notifications,
@@ -649,6 +697,9 @@ class _LessonCard extends StatelessWidget {
 
   final ScheduleLesson lesson;
   final bool isToday;
+
+  /// Показывать кнопку «Отметить»: только сегодня и только в будни.
+  final bool canMark;
   final ScheduleController schedule;
   final AttendanceController? attendance;
   final NotificationController? notifications;
@@ -660,13 +711,12 @@ class _LessonCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final isLight = scheme.brightness == Brightness.light;
     final session = attendance?.session;
-    final markedToday = isToday && session != null
+    final markedToday = canMark && session != null
         ? session.markedCountInLesson(
             lessonKey: lesson.id,
             lessonTitle: lesson.subject,
           )
         : 0;
-    final canMark = isToday && attendance != null;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -733,19 +783,17 @@ class _LessonCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                if (canMark) ...[
+                if (canMark && attendance != null) ...[
                   const SizedBox(width: 8),
                   _MarkChip(
                     marked: markedToday,
                     lesson: lesson,
+                    schedule: schedule,
                     attendance: attendance!,
                     notifications: notifications,
                   ),
                 ],
-                _LessonMenu(
-                  lesson: lesson,
-                  schedule: schedule,
-                ),
+                _LessonMenu(lesson: lesson, schedule: schedule),
               ],
             ),
           ),
@@ -760,12 +808,14 @@ class _MarkChip extends StatelessWidget {
   const _MarkChip({
     required this.marked,
     required this.lesson,
+    required this.schedule,
     required this.attendance,
     required this.notifications,
   });
 
   final int marked;
   final ScheduleLesson lesson;
+  final ScheduleController schedule;
   final AttendanceController attendance;
   final NotificationController? notifications;
 
@@ -783,10 +833,13 @@ class _MarkChip extends StatelessWidget {
         minimumSize: const Size(0, 36),
       ),
       onPressed: () {
+        // Пара открыта с сегодняшнего дня — отметки идут за сегодня.
+        attendance.selectDate(dateOnly(DateTime.now()));
         Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (_) => AttendanceScreen(
               attendance: attendance,
+              schedule: schedule,
               lesson: lesson,
               notifications: notifications,
             ),
@@ -798,7 +851,9 @@ class _MarkChip extends StatelessWidget {
         size: 18,
       ),
       label: Text(
-        total == 0 ? 'Отметить' : (marked == 0 ? 'Отметить' : '$marked из $total'),
+        total == 0
+            ? 'Отметить'
+            : (marked == 0 ? 'Отметить' : '$marked из $total'),
         style: const TextStyle(fontSize: 12),
         overflow: TextOverflow.ellipsis,
       ),

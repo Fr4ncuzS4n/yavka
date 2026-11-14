@@ -25,9 +25,10 @@ void main() {
 
   AttendanceController controller({AttendanceStore? store}) =>
       AttendanceController(
-        session: AttendanceSession.forToday(
+        session: AttendanceSession(
           groupName: 'БИТ-24-03',
           students: students,
+          date: DateTime(2026, 11, 9), // понедельник
         ),
         store: store,
       );

@@ -93,10 +93,13 @@ class MonthGridSyncService {
 
   /// Отправляет отметки в лист месяца (создаёт лист и шапку при
   /// необходимости).
+  ///
+  /// В [sessions] передаются сессии всех отмеченных дней месяца:
+  /// задним числом и за сегодня — все попадают в свой день листа.
   Future<GridSyncResult> push({
     required String spreadsheetId,
     required DateTime month,
-    required AttendanceSession session,
+    required List<AttendanceSession> sessions,
   }) async {
     final monthDate = DateTime(month.year, month.month, 1);
     final canonicalTitle = MonthGridCodec.monthSheetTitle(month);
@@ -143,46 +146,49 @@ class MonthGridSyncService {
     var appendedStudents = 0;
     final knownRows = Map.of(state.rowsOfStudent);
     var nextRow = MonthGridCodec.firstStudentRow + state.students.length;
-    for (final student in session.students) {
-      if (knownRows.containsKey(student.id) ||
-          state.students.any(
-            (sheet) => sheet.fullName == student.fullName,
-          )) {
-        continue;
+    for (final session in sessions) {
+      for (final student in session.students) {
+        if (knownRows.containsKey(student.id) ||
+            state.students.any(
+              (sheet) => sheet.fullName == student.fullName,
+            )) {
+          continue;
+        }
+        final number = state.students.length + appendedStudents + 1;
+        requests.add(
+          _updateCells(
+            sheetId: sheetId,
+            rowIndex: nextRow,
+            columnIndex: 0,
+            rows: [
+              {
+                'values': [
+                  {
+                    'userEnteredValue': {'numberValue': number},
+                  },
+                  {
+                    'userEnteredValue': {'stringValue': student.fullName},
+                  },
+                ],
+              },
+            ],
+            fields: 'userEnteredValue',
+          ),
+        );
+        knownRows[student.id] = nextRow;
+        nextRow++;
+        appendedStudents++;
       }
-      final number = state.students.length + appendedStudents + 1;
-      requests.add(
-        _updateCells(
-          sheetId: sheetId,
-          rowIndex: nextRow,
-          columnIndex: 0,
-          rows: [
-            {
-              'values': [
-                {
-                  'userEnteredValue': {'numberValue': number},
-                },
-                {
-                  'userEnteredValue': {'stringValue': student.fullName},
-                },
-              ],
-            },
-          ],
-          fields: 'userEnteredValue',
-        ),
-      );
-      knownRows[student.id] = nextRow;
-      nextRow++;
-      appendedStudents++;
     }
 
-    // Отметки: содержимое листа месяца; сегодняшний день поверх — локальные
-    // отметки всегда свежее.
+    // Отметки: содержимое листа месяца; отмеченные локально дни поверх —
+    // локальные отметки всегда свежее.
     final desired = {
       for (final entry in state.entries.entries)
         entry.key: {...entry.value},
     };
-    if (_isSameMonth(session.date, monthDate)) {
+    for (final session in sessions) {
+      if (!_isSameMonth(session.date, monthDate)) continue;
       final day = session.date.day;
       desired[day] = {
         ...?desired[day],

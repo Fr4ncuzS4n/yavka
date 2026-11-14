@@ -3,15 +3,39 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:yavka/data/attendance_controller.dart';
+import 'package:yavka/data/example_group.dart';
 import 'package:yavka/main.dart';
+import 'package:yavka/models/attendance_session.dart';
 import 'package:yavka/screens/attendance_screen.dart';
+
+/// Фиксированный понедельник: тесты не зависят от дня недели запуска
+/// (в выходные отметки запрещены).
+final kMonday = DateTime(2026, 11, 9);
+
+Future<void> _pumpApp(WidgetTester tester) async {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = const Size(412, 1200);
+  addTearDown(tester.view.reset);
+  await tester.pumpWidget(
+    AppRoot(
+      attendance: AttendanceController(
+        session: AttendanceSession(
+          groupName: exampleGroupName,
+          students: exampleStudents,
+          date: kMonday,
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
 
 void main() {
   testWidgets('Список группы отображается, студент выбран по умолчанию', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
-    await tester.pumpAndSettle();
+    await _pumpApp(tester);
 
     expect(find.text('Группа БИТ-24-03'), findsOneWidget);
     expect(find.text('Алексей Морозов'), findsOneWidget);
@@ -21,8 +45,7 @@ void main() {
   testWidgets('Отметка «Пришёл» применяется к выбранному студенту', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
-    await tester.pumpAndSettle();
+    await _pumpApp(tester);
 
     await tester.tap(find.text('Пришёл'));
     await tester.pumpAndSettle();
@@ -40,8 +63,7 @@ void main() {
   testWidgets('Другой студент выбирается по тапу и получает свою отметку', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
-    await tester.pumpAndSettle();
+    await _pumpApp(tester);
 
     await tester.tap(find.text('Мария Соколова'));
     await tester.pumpAndSettle();
@@ -70,8 +92,7 @@ void main() {
   testWidgets('«Непришёл» требует подтверждения и выбора времени', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const AppRoot());
-    await tester.pumpAndSettle();
+    await _pumpApp(tester);
 
     // Первое нажатие — предупреждение.
     await tester.tap(find.text('Непришёл'));
