@@ -1,11 +1,14 @@
 import '../../../data/cloud_settings.dart';
 
-/// Область доступа: просмотр, создание и редактирование Google Таблиц.
+/// Области доступа: просмотр, создание и редактирование Google Таблиц
+/// плюс почта аккаунта — она нужна, чтобы привязывать расписание к
+/// конкретному пользователю (у каждой почты — своё расписание).
 ///
 /// Отдельный Drive-scope не нужен: таблица — это файл на Google Диске,
 /// а доступ к ней определяется правами пользователя (владелец/редактор).
 const List<String> kGoogleSheetsScopes = [
   'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/userinfo.email',
 ];
 
 /// Параметры OAuth-клиента.
@@ -82,6 +85,7 @@ class OAuthTokens {
     required this.expiresAt,
     required this.scopes,
     this.refreshToken,
+    this.email,
   });
 
   final String accessToken;
@@ -90,6 +94,21 @@ class OAuthTokens {
   /// Момент истечения access token (UTC).
   final DateTime expiresAt;
   final List<String> scopes;
+
+  /// Почта аккаунта Google, которому принадлежат токены.
+  ///
+  /// Запрашивается у Google при входе и хранится вместе с токенами:
+  /// по ней расписание привязывается к пользователю.
+  final String? email;
+
+  /// Те же токены с другой почтой (или без неё).
+  OAuthTokens withEmail(String? newEmail) => OAuthTokens(
+    accessToken: accessToken,
+    refreshToken: refreshToken,
+    expiresAt: expiresAt,
+    scopes: scopes,
+    email: (newEmail == null || newEmail.isEmpty) ? null : newEmail,
+  );
 
   bool get isExpired => DateTime.now().toUtc().isAfter(
     expiresAt.subtract(const Duration(seconds: 60)),
@@ -100,6 +119,7 @@ class OAuthTokens {
     if (refreshToken != null) 'refreshToken': refreshToken,
     'expiresAt': expiresAt.toUtc().toIso8601String(),
     'scopes': scopes,
+    if (email != null) 'email': email,
   };
 
   factory OAuthTokens.fromJson(Map<String, Object?> json) {
@@ -112,11 +132,13 @@ class OAuthTokens {
         scopes is! List) {
       throw const FormatException('Некорректные OAuth-токены');
     }
+    final email = json['email']?.toString();
     return OAuthTokens(
       accessToken: accessToken,
       refreshToken: json['refreshToken']?.toString(),
       expiresAt: expiresAt.toUtc(),
       scopes: scopes.map((e) => e.toString()).toList(),
+      email: (email == null || email.isEmpty) ? null : email,
     );
   }
 }

@@ -52,6 +52,18 @@ class _HomeShellState extends State<HomeShell> {
     _schedule.load();
     _notifications.load();
     widget.catalog?.load();
+    // Почта аккаунта меняется при входе/выходе — отражаем на экранах.
+    widget.cloud?.addListener(_onCloudChanged);
+  }
+
+  void _onCloudChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    widget.cloud?.removeListener(_onCloudChanged);
+    super.dispose();
   }
 
   @override
@@ -74,6 +86,7 @@ class _HomeShellState extends State<HomeShell> {
             attendance: _attendance,
             notifications: _notifications,
             catalog: widget.catalog,
+            accountEmail: widget.cloud?.accountEmail,
           ),
         ],
       ),

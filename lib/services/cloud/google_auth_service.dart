@@ -6,13 +6,23 @@ import 'oauth/oauth_models.dart';
 import 'token_store.dart';
 
 /// Управляет входом в Google и access token для запросов к Sheets API.
+///
+/// Вместе с токенами узнаёт и хранит почту аккаунта: она нужна, чтобы
+/// расписание было привязано к конкретному пользователю.
 class GoogleAuthService extends ChangeNotifier {
-  GoogleAuthService({required OAuthFlow flow, required TokenStore tokenStore})
-    : _flow = flow,
-      _tokenStore = tokenStore;
+  GoogleAuthService({
+    required OAuthFlow flow,
+    required TokenStore tokenStore,
+    Future<String?> Function(String accessToken)? accountEmailFetcher,
+  }) : _flow = flow,
+       _tokenStore = tokenStore,
+       _accountEmailFetcher = accountEmailFetcher;
 
   final OAuthFlow _flow;
   final TokenStore _tokenStore;
+
+  /// Лучший способ узнать почту аккаунта по access token.
+  final Future<String?> Function(String accessToken)? _accountEmailFetcher;
 
   GoogleOAuthConfig _config = const GoogleOAuthConfig.none();
   OAuthTokens? _tokens;
@@ -22,6 +32,9 @@ class GoogleAuthService extends ChangeNotifier {
   bool get isConfigured => _config.isConfigured;
 
   bool get isSignedIn => _tokens != null;
+
+  /// Почта аккаунта, под которым выполнен вход, если её удалось узнать.
+  String? get accountEmail => _tokens?.email;
 
   bool get isBusy => _busy;
 
@@ -46,6 +59,8 @@ class GoogleAuthService extends ChangeNotifier {
       } else {
         await _refresh();
       }
+    } else {
+      await _fillEmail();
     }
     notifyListeners();
   }
@@ -65,7 +80,10 @@ class GoogleAuthService extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      final tokens = await _flow.signIn(_config);
+      var tokens = await _flow.signIn(_config);
+      _tokens = tokens;
+      notifyListeners();
+      tokens = await _fillEmail(tokens) ?? tokens;
       _tokens = tokens;
       await _tokenStore.save(tokens);
     } catch (error) {
@@ -109,17 +127,41 @@ class GoogleAuthService extends ChangeNotifier {
     if (tokens == null) return null;
     try {
       final refreshed = await _flow.refresh(_config, tokens);
-      _tokens = refreshed;
-      await _tokenStore.save(refreshed);
+      // Почта не меняется при продлении токена — переносим её.
+      final updated = refreshed.email == null
+          ? refreshed.withEmail(tokens.email)
+          : refreshed;
+      _tokens = updated;
+      await _tokenStore.save(updated);
       _error = null;
       notifyListeners();
-      return refreshed;
+      return updated;
     } catch (error) {
       _tokens = null;
       _error = _message(error);
       await _tokenStore.save(null);
       notifyListeners();
       return null;
+    }
+  }
+
+  /// Дособирает почту аккаунта, если токены её ещё не содержат.
+  Future<OAuthTokens?> _fillEmail([OAuthTokens? source]) async {
+    final tokens = source ?? _tokens;
+    if (tokens == null || tokens.email != null) return tokens;
+    final fetcher = _accountEmailFetcher;
+    if (fetcher == null) return tokens;
+    try {
+      final email = await fetcher(tokens.accessToken);
+      if (email == null || email.isEmpty) return tokens;
+      final updated = tokens.withEmail(email);
+      _tokens = updated;
+      notifyListeners();
+      return updated;
+    } catch (_) {
+      // Почта — лучший результат: без неё расписание просто не
+      // привязывается к аккаунту.
+      return tokens;
     }
   }
 

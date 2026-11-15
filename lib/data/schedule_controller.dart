@@ -11,17 +11,37 @@ import 'schedule_store.dart';
 ///
 /// Пары можно добавить вручную (списком) или вставить документом с
 /// расписанием. Хранятся локально и переживают перезапуск приложения.
+///
+/// Расписание привязывается к почте аккаунта Google: у каждой почты
+/// своё расписание ([switchAccount]), без входа — общее локальное.
 class ScheduleController extends ChangeNotifier {
-  ScheduleController({ScheduleStore? store, List<ScheduleLesson>? lessons})
-    : _store = store,
-      _lessons = List<ScheduleLesson>.unmodifiable(lessons ?? const []);
+  ScheduleController({
+    ScheduleStore? store,
+    ScheduleStoreFactory? storeFactory,
+    List<ScheduleLesson>? lessons,
+  }) : _store = store,
+       _storeFactory = storeFactory,
+       _lessons = List<ScheduleLesson>.unmodifiable(lessons ?? const []);
 
   /// Пустое расписание — удобно для тестов и первого запуска.
   factory ScheduleController.inMemory() => ScheduleController();
 
-  final ScheduleStore? _store;
+  final ScheduleStoreFactory? _storeFactory;
+
+  /// Хранилище текущего аккаунта. Меняется при переключении почты —
+  /// поэтому не final.
+  ScheduleStore? _store;
   List<ScheduleLesson> _lessons;
   bool _loaded = false;
+
+  /// Почта аккаунта, к расписанию которого привязан контроллер;
+  /// `null` — локальное расписание без входа.
+  String? get accountEmail => _accountEmail;
+  String? _accountEmail;
+
+  /// Загружаемое сейчас расписание — чтобы параллельные переключения
+  /// на ту же почту не путали данные.
+  Future<void>? _switching;
 
   /// Все пары расписания (по всем дням).
   List<ScheduleLesson> get lessons => _lessons;
@@ -106,6 +126,40 @@ class ScheduleController extends ChangeNotifier {
     _lessons = List<ScheduleLesson>.unmodifiable([...kept, ...lessons]);
     notifyListeners();
     _persist();
+  }
+
+  /// Переключает расписание на почту [email] аккаунта Google.
+  ///
+  /// Текущее расписание сохраняется под прежней почтой, затем
+  /// загружается расписание новой: у каждой почты — своё. `null`
+  /// возвращает локальное расписание (без входа). Повторный вызов с
+  /// той же почтой ничего не меняет и дожидается прежней загрузки.
+  Future<void> switchAccount(String? email) {
+    final factory = _storeFactory;
+    if (factory == null || email == _accountEmail) {
+      return _switching ?? Future.value();
+    }
+
+    // Сохраняем под прежней почтой до подмены хранилища.
+    _persist();
+    _accountEmail = email;
+    _store = factory.forAccount(email);
+    final done = _loadCurrent();
+    _switching = done;
+    return done.whenComplete(() {
+      if (_switching == done) _switching = null;
+    });
+  }
+
+  /// Загружает расписание из текущего хранилища.
+  Future<void> _loadCurrent() async {
+    try {
+      final saved = await _store?.load() ?? const <ScheduleLesson>[];
+      _lessons = List<ScheduleLesson>.unmodifiable(saved);
+      notifyListeners();
+    } catch (_) {
+      // Повреждённое хранилище не должно мешать работе приложения.
+    }
   }
 
   void _persist() {

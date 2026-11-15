@@ -27,6 +27,7 @@ class ScheduleScreen extends StatefulWidget {
     this.attendance,
     this.notifications,
     this.catalog,
+    this.accountEmail,
   });
 
   final ScheduleController schedule;
@@ -36,6 +37,10 @@ class ScheduleScreen extends StatefulWidget {
   /// Локальная база: преподаватели, предметы, кабинеты. Без неё диалог
   /// пары остаётся с селектами, но пополнять базу из него нельзя.
   final CatalogController? catalog;
+
+  /// Почта аккаунта, к расписанию которого привязано приложение;
+  /// `null` — расписание без входа в Google.
+  final String? accountEmail;
 
   @override
   State<ScheduleScreen> createState() => _ScheduleScreenState();
@@ -131,6 +136,33 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               height: 1,
               thickness: 1,
             ),
+            if (widget.accountEmail != null)
+              Material(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 6,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.alternate_email_rounded,
+                        size: 16,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Расписание аккаунта ${widget.accountEmail}',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             Expanded(
               child: TabBarView(
                 controller: _days,

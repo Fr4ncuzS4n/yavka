@@ -96,6 +96,9 @@ class CloudSyncController extends ChangeNotifier {
   /// Расписание приложения: по нему считаются пары в днях.
   ScheduleController? get schedule => _schedule;
 
+  /// Почта аккаунта Google, если вход выполнен и почта известна.
+  String? get accountEmail => auth.accountEmail;
+
   bool _hasAutoSyncInvolved() =>
       isConfigured &&
       isSignedIn &&
@@ -129,15 +132,13 @@ class CloudSyncController extends ChangeNotifier {
     }
     auth.configure(_configFromSettings());
 
-    if (!_hasAutoSyncInvolved()) {
-      notifyListeners();
-      return;
-    }
-
     _busy = true;
     notifyListeners();
     try {
+      // Восстановление нужно всегда: по токенам узнаётся почта
+      // аккаунта, к которой привязывается расписание.
       await auth.restore();
+      await _rebindSchedule();
       if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
@@ -154,6 +155,8 @@ class CloudSyncController extends ChangeNotifier {
     await _run(() async {
       auth.configure(_configFromSettings());
       await auth.signIn();
+      // Расписание новой почты должно быть загружено до синхронизации.
+      await _rebindSchedule();
       if (_hasAutoSyncInvolved()) {
         await _pull();
         await _push();
@@ -525,7 +528,22 @@ class CloudSyncController extends ChangeNotifier {
   }
 
   void _onAuthChanged() {
+    // Расписание привязано к почте: сменился аккаунт — сменится и
+    // расписание (выход возвращает локальное).
+    unawaited(_rebindSchedule());
     notifyListeners();
+  }
+
+  /// Подменяет расписание под почту текущего аккаунта.
+  Future<void> _rebindSchedule() async {
+    final schedule = _schedule;
+    if (schedule == null) return;
+    try {
+      await schedule.switchAccount(auth.accountEmail);
+    } catch (_) {
+      // Без переключения приложение продолжит работать с прежним
+      // расписанием.
+    }
   }
 
   String _message(Object error) {

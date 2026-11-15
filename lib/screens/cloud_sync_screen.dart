@@ -220,6 +220,7 @@ class _CloudSyncScreenState extends State<CloudSyncScreen> {
                   children: [
                     if (cloud.isSignedIn)
                       _SignedInAccount(
+                        email: cloud.accountEmail,
                         onSignOut: cloud.isBusy
                             ? null
                             : () => _runAction(cloud.signOut),
@@ -597,9 +598,12 @@ class _StatusCard extends StatelessWidget {
 }
 
 class _SignedInAccount extends StatelessWidget {
-  const _SignedInAccount({required this.onSignOut});
+  const _SignedInAccount({required this.onSignOut, this.email});
 
   final VoidCallback? onSignOut;
+
+  /// Почта аккаунта, если её удалось узнать у Google.
+  final String? email;
 
   @override
   Widget build(BuildContext context) {
@@ -608,9 +612,24 @@ class _SignedInAccount extends StatelessWidget {
       children: [
         Icon(Icons.check_circle_rounded, color: scheme.primary),
         const SizedBox(width: 10),
-        const Expanded(
-          child: Text(
-            'Аккаунт Google подключён. Токен хранится на устройстве.',
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                email == null
+                    ? 'Аккаунт Google подключён. Токен хранится на устройстве.'
+                    : 'Аккаунт: $email',
+              ),
+              const SizedBox(height: 2),
+              Text(
+                'Расписание привязано к почте аккаунта: у каждой почты '
+                'своё расписание.',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
         TextButton(onPressed: onSignOut, child: const Text('Выйти')),

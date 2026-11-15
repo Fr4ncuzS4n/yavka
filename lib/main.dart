@@ -17,6 +17,7 @@ import 'data/ui_settings.dart';
 import 'models/attendance_session.dart';
 import 'screens/home_shell.dart';
 import 'services/cloud/cloud_sync_controller.dart';
+import 'services/cloud/google_account_api.dart';
 import 'services/cloud/google_auth_service.dart';
 import 'services/cloud/google_sheets_api.dart';
 import 'services/cloud/oauth/oauth_flow.dart';
@@ -43,6 +44,7 @@ Future<void> main() async {
 
     schedule = ScheduleController(
       store: SharedPreferencesScheduleStore(preferences),
+      storeFactory: SharedPreferencesScheduleStoreFactory(preferences),
     );
     await schedule.load();
 
@@ -56,9 +58,11 @@ Future<void> main() async {
     );
     await notifications.load();
 
+    final accountApi = GoogleAccountApi();
     final auth = GoogleAuthService(
       flow: createOAuthFlow(),
       tokenStore: SharedPreferencesTokenStore(preferences),
+      accountEmailFetcher: accountApi.fetchEmail,
     );
     cloud = CloudSyncController(
       attendance: attendance,
