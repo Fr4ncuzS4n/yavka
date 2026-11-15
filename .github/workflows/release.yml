@@ -1,16 +1,21 @@
 name: Release build
 
+# Релиз создаётся автоматически: пушишь в main версию выше прежней
+# (поле version в pubspec.yaml, тег берётся из неё: 1.1.0+2 → v1.1.0) —
+# workflow ставит тег, создаёт Release и прикладывает сборки всех
+# платформ. Если версия не менялась — ничего не собирается.
 on:
-  release:
-    types: [published]
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Тег релиза, куда загрузить сборки (например v1.0.0). Если пусто — последний релиз.'
+        description: 'Тег релиза (например v1.0.0). Если пусто — по версии в pubspec.yaml.'
         required: false
 
 permissions:
   contents: write
+
 env:
   # OAuth-клиент вшивается в сборку: пользователю не нужно регистрировать
   # свой проект в Google Cloud — только нажать «Разрешить». Для installed
@@ -23,9 +28,57 @@ env:
     --dart-define=GOOGLE_WEB_CLIENT_ID=${{ secrets.GOOGLE_WEB_CLIENT_ID }}
 
 jobs:
+  release:
+    name: Создание релиза
+    runs-on: ubuntu-latest
+    outputs:
+      released: ${{ steps.check.outputs.released }}
+      tag: ${{ steps.check.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # нужны теги, чтобы сравнить с последним
+
+      - name: Определение версии
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
+          base="${version%%+*}" # 1.1.0+2 → 1.1.0
+          tag='${{ inputs.tag }}'
+          if [ -z "$tag" ]; then tag="v$base"; fi
+          echo "Версия в pubspec: $version → тег $tag"
+
+          # Пуш с той же версией: релиз уже выходил, собирать нечего.
+          if [ "${{ github.event_name }}" = "push" ] &&
+            git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Тег $tag уже существует — релиз не создаётся."
+            echo "released=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Релиз создаётся один раз до сборок; если он уже есть
+          # (например, пересборка после ручного запуска) — просто
+          # доливаем файлы в него.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "Явка $tag" \
+              --generate-notes \
+              --repo "$GITHUB_REPOSITORY" ||
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
+          fi
+
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
   windows:
     name: Windows x64
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,15 +100,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $tag = '${{ github.event.release.tag_name }}'
-          if (-not $tag) { $tag = '${{ inputs.tag }}' }
-          if (-not $tag) { $tag = (gh release view --json tagName --jq .tagName) }
-          Write-Host "Uploading to release $tag"
-          gh release upload "$tag" 'yavka-windows-x64.zip' --clobber --repo '${{ github.repository }}'
+          Write-Host "Uploading to release $env:RELEASE_TAG"
+          gh release upload "$env:RELEASE_TAG" 'yavka-windows-x64.zip' --clobber --repo '${{ github.repository }}'
 
   android:
     name: Android (APK)
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -81,15 +135,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag='${{ github.event.release.tag_name }}'
-          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
-          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
-          echo "Uploading to release $tag"
-          gh release upload "$tag" yavka-android.apk --clobber --repo '${{ github.repository }}'
+          echo "Uploading to release $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" yavka-android.apk --clobber --repo '${{ github.repository }}'
 
   linux:
     name: Linux x64
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -116,14 +171,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag='${{ github.event.release.tag_name }}'
-          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
-          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
-          echo "Uploading to release $tag"
-          gh release upload "$tag" yavka-linux-x64.zip --clobber --repo '${{ github.repository }}'
+          echo "Uploading to release $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" yavka-linux-x64.zip --clobber --repo '${{ github.repository }}'
 
   web:
     name: Web
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-latest
     permissions:
       # Публикация сборок в релиз и деплой сайта на GitHub Pages.
@@ -133,6 +187,8 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.pages.outputs.page_url }}
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -157,11 +213,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag='${{ github.event.release.tag_name }}'
-          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
-          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
-          echo "Uploading to release $tag"
-          gh release upload "$tag" yavka-web.zip --clobber --repo '${{ github.repository }}'
+          echo "Uploading to release $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" yavka-web.zip --clobber --repo '${{ github.repository }}'
 
       - name: Настройка GitHub Pages
         uses: actions/configure-pages@v5
