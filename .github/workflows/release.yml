@@ -11,7 +11,6 @@ on:
 
 permissions:
   contents: write
-
 env:
   # OAuth-клиент вшивается в сборку: пользователю не нужно регистрировать
   # свой проект в Google Cloud — только нажать «Разрешить». Для installed
@@ -34,7 +33,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.9
+          flutter-version: 3.50.0
 
       - name: Сборка Windows
         run: flutter build windows --release ${{ env.DART_DEFINES }}
@@ -70,7 +69,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.9
+          flutter-version: 3.50.0
 
       - name: Сборка Android APK
         run: flutter build apk --release ${{ env.DART_DEFINES }}
@@ -98,7 +97,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: 3.47.9
+          flutter-version: 3.50.0
 
       - name: Зависимости для сборки Linux
         run: |
@@ -122,3 +121,65 @@ jobs:
           if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
           echo "Uploading to release $tag"
           gh release upload "$tag" yavka-linux-x64.zip --clobber --repo '${{ github.repository }}'
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    permissions:
+      # Публикация сборок в релиз и деплой сайта на GitHub Pages.
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.pages.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+          cache: true
+
+      - name: Сборка Web
+        # Приложение живёт по адресу <сайт>/yavka/app/, лендинг —
+        # на <сайт>/yavka/ (страницы из docs/).
+        run: flutter build web --release --base-href=/yavka/app/ ${{ env.DART_DEFINES }}
+
+      - name: Архив для релиза
+        run: |
+          cd build/web
+          zip -qr "$GITHUB_WORKSPACE/yavka-web.zip" .
+
+      - name: Загрузка в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag='${{ github.event.release.tag_name }}'
+          if [ -z "$tag" ]; then tag='${{ inputs.tag }}'; fi
+          if [ -z "$tag" ]; then tag=$(gh release view --json tagName --jq .tagName); fi
+          echo "Uploading to release $tag"
+          gh release upload "$tag" yavka-web.zip --clobber --repo '${{ github.repository }}'
+
+      - name: Настройка GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          # Pages включается автоматически при первом деплое.
+          enablement: true
+
+      - name: 'Сборка сайта: лендинг (docs/) + приложение'
+        run: |
+          mkdir -p site/app
+          cp -r docs/. site/
+          cp -r build/web/. site/app/
+
+      - name: Публикация артефакта Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Деплой на GitHub Pages
+        id: pages
+        uses: actions/deploy-pages@v4
