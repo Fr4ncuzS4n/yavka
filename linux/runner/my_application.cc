@@ -18,7 +18,6 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
-
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -66,6 +65,12 @@ static void my_application_activate(GApplication* application) {
   fl_view_set_background_color(view, &background_color);
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+
+  // Show the window immediately: on some Wayland compositors (e.g. niri) the
+  // Flutter rendering subsurface in synchronized mode is never consumed until
+  // the toplevel commits, so waiting for the first frame before showing the
+  // window deadlocks and the window never appears.
+  gtk_widget_show(GTK_WIDGET(window));
 
   // Show the window when Flutter renders.
   // Requires the view to be realized so we can start rendering.
