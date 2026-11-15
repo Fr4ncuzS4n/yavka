@@ -8,6 +8,7 @@ import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/ui_settings.dart';
 import '../services/cloud/cloud_sync_controller.dart';
+import '../services/update/update_check.dart';
 import '../theme/app_theme.dart';
 import 'catalog_screen.dart';
 import 'cloud_sync_screen.dart';
@@ -31,6 +32,7 @@ class SettingsScreen extends StatelessWidget {
     this.catalog,
     this.notifications,
     this.cloud,
+    this.updates,
   });
 
   final UiSettingsController settings;
@@ -42,6 +44,10 @@ class SettingsScreen extends StatelessWidget {
   final CatalogController? catalog;
   final NotificationController? notifications;
   final CloudSyncController? cloud;
+
+  /// Проверка обновлений: без него карточка «О приложении» не
+  /// предлагает свежую версию.
+  final UpdateController? updates;
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +207,7 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 12),
-                    _AboutCard(),
+                    _AboutCard(updates: updates),
                     const SizedBox(height: 16),
                     Text(
                       'Выбор дизайна сохраняется на устройстве. Дизайн '
@@ -328,8 +334,12 @@ class _LinkTile extends StatelessWidget {
   }
 }
 
-/// «О приложении»: лого, версия и ссылки.
+/// «О приложении»: лого, версия, обновления и ссылки.
 class _AboutCard extends StatelessWidget {
+  const _AboutCard({this.updates});
+
+  final UpdateController? updates;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -370,6 +380,22 @@ class _AboutCard extends StatelessWidget {
             ),
           ],
         ),
+        if (updates != null) ...[
+          const SizedBox(height: 8),
+          ListenableBuilder(
+            listenable: updates!,
+            builder: (context, _) {
+              final update = updates!.available;
+              if (update == null && !updates!.isChecking) {
+                return const SizedBox.shrink();
+              }
+              return _UpdateRow(
+                available: update,
+                isChecking: updates!.isChecking,
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 8),
         Row(
           children: [
@@ -409,6 +435,81 @@ class _AboutCard extends StatelessWidget {
         SnackBar(content: Text('Не удалось открыть ссылку: $url')),
       );
     }
+  }
+}
+
+/// Строка «доступна новая версия»: проверка идёт, найдено — кнопка.
+class _UpdateRow extends StatelessWidget {
+  const _UpdateRow({required this.available, required this.isChecking});
+
+  /// Найденное обновление; `null` — пока идёт проверка.
+  final AvailableUpdate? available;
+  final bool isChecking;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final update = available;
+
+    if (update == null) {
+      return Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            'Ищу свежую версию…',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: scheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: scheme.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.primary.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.system_update_alt_rounded, size: 20, color: scheme.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              'Доступна версия ${update.version}',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ),
+          FilledButton(
+            onPressed: () async {
+              try {
+                await launchUrl(
+                  Uri.parse(update.downloadUrl),
+                  mode: LaunchMode.externalApplication,
+                );
+              } catch (_) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Не удалось открыть ссылку: ${update.downloadUrl}',
+                    ),
+                  ),
+                );
+              }
+            },
+            child: const Text('Обновить'),
+          ),
+        ],
+      ),
+    );
   }
 }
 

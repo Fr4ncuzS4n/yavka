@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/attendance_controller.dart';
@@ -22,6 +23,7 @@ import 'services/cloud/google_auth_service.dart';
 import 'services/cloud/google_sheets_api.dart';
 import 'services/cloud/oauth/oauth_flow.dart';
 import 'services/cloud/token_store.dart';
+import 'services/update/update_check.dart';
 import 'theme/app_theme.dart';
 
 Future<void> main() async {
@@ -33,6 +35,7 @@ Future<void> main() async {
   var notifications = NotificationController();
   CloudSyncController? cloud;
   UiSettingsController? settings;
+  UpdateController? updates;
 
   try {
     final preferences = await SharedPreferences.getInstance();
@@ -73,6 +76,16 @@ Future<void> main() async {
       schedule: schedule,
     );
     settings = UiSettingsController(preferences: preferences);
+
+    // Свежая версия ищется в фоне; без сети приложение молчит.
+    String? currentVersion;
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      currentVersion = packageInfo.version;
+    } catch (_) {
+      currentVersion = null;
+    }
+    updates = UpdateController(currentVersion: () async => currentVersion);
   } catch (error, stackTrace) {
     // Приложение должно запускаться даже без локального хранилища —
     // тогда данные живут только в памяти.
@@ -89,11 +102,15 @@ Future<void> main() async {
       notifications: notifications,
       cloud: cloud,
       settings: settings,
+      updates: updates,
     ),
   );
 
   if (cloud != null) {
     unawaited(cloud.initialize());
+  }
+  if (updates != null) {
+    unawaited(updates.check());
   }
 }
 
@@ -106,6 +123,7 @@ class AppRoot extends StatelessWidget {
     this.notifications,
     this.cloud,
     this.settings,
+    this.updates,
   });
 
   final AttendanceController? attendance;
@@ -116,6 +134,9 @@ class AppRoot extends StatelessWidget {
   final NotificationController? notifications;
   final CloudSyncController? cloud;
   final UiSettingsController? settings;
+
+  /// Проверка обновлений с GitHub Releases.
+  final UpdateController? updates;
 
   @override
   Widget build(BuildContext context) {
@@ -132,6 +153,7 @@ class AppRoot extends StatelessWidget {
           catalog: catalog,
           notifications: notifications,
           cloud: cloud,
+          updates: updates,
         ),
       );
     }
@@ -153,6 +175,7 @@ class AppRoot extends StatelessWidget {
             notifications: notifications,
             cloud: cloud,
             uiSettings: controller,
+            updates: updates,
           ),
         );
       },

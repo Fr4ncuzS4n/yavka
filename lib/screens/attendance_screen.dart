@@ -11,6 +11,7 @@ import '../models/attendance_status.dart';
 import '../models/schedule_lesson.dart';
 import '../models/student.dart';
 import '../services/cloud/cloud_sync_controller.dart';
+import '../services/update/update_check.dart';
 import '../theme/app_theme.dart';
 import '../theme/status_style.dart';
 import '../util/desktop_layout.dart';
@@ -50,6 +51,7 @@ class AttendanceScreen extends StatefulWidget {
     this.lesson,
     this.notifications,
     this.catalog,
+    this.updates,
   });
 
   /// Состояние посещаемости. Если не передано — создаётся пример группы
@@ -76,6 +78,10 @@ class AttendanceScreen extends StatefulWidget {
   /// Локальная база: преподаватели, предметы, кабинеты. Если `null`,
   /// в настройках не будет пункта «База данных».
   final CatalogController? catalog;
+
+  /// Проверка обновлений с GitHub Releases. Если `null`, баннер
+  /// свежей версии в настройках не показывается.
+  final UpdateController? updates;
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -775,6 +781,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           catalog: widget.catalog,
           notifications: widget.notifications,
           cloud: widget.cloud,
+          updates: widget.updates,
         ),
       ),
     );

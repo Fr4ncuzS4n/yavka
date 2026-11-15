@@ -6,6 +6,7 @@ import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/ui_settings.dart';
 import '../services/cloud/cloud_sync_controller.dart';
+import '../services/update/update_check.dart';
 import 'attendance_screen.dart';
 import 'schedule_screen.dart';
 
@@ -19,6 +20,7 @@ class HomeShell extends StatefulWidget {
     this.notifications,
     this.uiSettings,
     this.catalog,
+    this.updates,
   });
 
   final AttendanceController? attendance;
@@ -31,6 +33,9 @@ class HomeShell extends StatefulWidget {
 
   /// Локальная база: преподаватели, предметы, кабинеты.
   final CatalogController? catalog;
+
+  /// Проверка обновлений с GitHub Releases.
+  final UpdateController? updates;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -80,6 +85,7 @@ class _HomeShellState extends State<HomeShell> {
             notifications: _notifications,
             uiSettings: widget.uiSettings,
             catalog: widget.catalog,
+            updates: widget.updates,
           ),
           ScheduleScreen(
             schedule: _schedule,
