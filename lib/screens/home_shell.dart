@@ -67,6 +67,7 @@ class _HomeShellState extends State<HomeShell> {
             schedule: _schedule,
             notifications: _notifications,
             uiSettings: widget.uiSettings,
+            catalog: widget.catalog,
           ),
           ScheduleScreen(
             schedule: _schedule,

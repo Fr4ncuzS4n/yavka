@@ -469,6 +469,18 @@ class CatalogController extends ChangeNotifier {
     return (room, true);
   }
 
+  /// Стирает базу: преподавателей, предметы и кабинеты.
+  ///
+  /// Расписание не трогается: предметы в парах остаются с теми
+  /// названиями и ссылками, которые у них были.
+  void clear() {
+    if (_teachers.isEmpty && _rooms.isEmpty && _subjects.isEmpty) return;
+    _teachers = const [];
+    _rooms = const [];
+    _subjects = const [];
+    _changed();
+  }
+
   String _newId(String prefix) =>
       '$prefix-${DateTime.now().microsecondsSinceEpoch}-${++_sequence}';
 

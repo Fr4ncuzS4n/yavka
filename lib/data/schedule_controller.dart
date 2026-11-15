@@ -84,6 +84,14 @@ class ScheduleController extends ChangeNotifier {
     _persist();
   }
 
+  /// Стирает всё расписание.
+  void clear() {
+    if (_lessons.isEmpty) return;
+    _lessons = const <ScheduleLesson>[];
+    notifyListeners();
+    _persist();
+  }
+
   /// Заменяет пары перечисленных дней новыми (используется при вставке
   /// документа с расписанием).
   void replaceWeekdays(

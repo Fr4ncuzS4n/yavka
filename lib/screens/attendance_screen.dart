@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
+import '../data/catalog_controller.dart';
 import '../data/notification_controller.dart';
 import '../data/schedule_controller.dart';
 import '../data/ui_settings.dart';
@@ -48,6 +49,7 @@ class AttendanceScreen extends StatefulWidget {
     this.schedule,
     this.lesson,
     this.notifications,
+    this.catalog,
   });
 
   /// Состояние посещаемости. Если не передано — создаётся пример группы
@@ -70,6 +72,10 @@ class AttendanceScreen extends StatefulWidget {
 
   /// Уведомления о отметках других пользователей таблицы.
   final NotificationController? notifications;
+
+  /// Локальная база: преподаватели, предметы, кабинеты. Если `null`,
+  /// в настройках не будет пункта «База данных».
+  final CatalogController? catalog;
 
   @override
   State<AttendanceScreen> createState() => _AttendanceScreenState();
@@ -688,7 +694,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (settings == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(settings: settings),
+        builder: (_) => SettingsScreen(
+          settings: settings,
+          attendance: widget.attendance,
+          schedule: widget.schedule,
+          catalog: widget.catalog,
+          notifications: widget.notifications,
+          cloud: widget.cloud,
+        ),
       ),
     );
   }

@@ -247,6 +247,24 @@ class AttendanceController extends ChangeNotifier {
     _persist();
   }
 
+  /// Стирает все локальные отметки: сессии всех дней и состав группы.
+  ///
+  /// Выбранный день остаётся, но начинается с пустой сессии. Таблица
+  /// в Google не трогается: отметки вернутся из журнала при следующей
+  /// загрузке, если включена синхронизация.
+  void reset() {
+    final day = dateOnly(_selectedDate);
+    _days = {
+      day: AttendanceSession(
+        groupName: _groupName,
+        date: day,
+        students: const [],
+      ),
+    };
+    notifyListeners();
+    _persist();
+  }
+
   /// Пустая сессия дня с составом группы из последнего отмеченного дня.
   AttendanceSession _emptyDay(DateTime day) => AttendanceSession(
     groupName: _groupName,
