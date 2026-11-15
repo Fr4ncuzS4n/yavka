@@ -123,6 +123,12 @@ void main() {
     expect(find.text('Google Диск'), findsNothing);
     expect(find.text('Уведомления'), findsNothing);
     expect(find.text('База данных'), findsOneWidget);
+    // Сброс и «О приложении» — ниже вьюпорта, прокручиваем.
+    await tester.scrollUntilVisible(
+      find.text('Сбросить локальные данные'),
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Сбросить локальные данные'), findsOneWidget);
     // О приложении: лого и название — ниже вьюпорта, прокручиваем.
     await tester.scrollUntilVisible(
@@ -155,6 +161,14 @@ void main() {
         catalog: catalog,
       ),
     ));
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.text('Сбросить локальные данные'),
+      160,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('Сбросить локальные данные'));
     await tester.pumpAndSettle();
 
     // Отмена ничего не стирает.

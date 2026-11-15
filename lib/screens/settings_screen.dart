@@ -119,6 +119,27 @@ class SettingsScreen extends StatelessWidget {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
+                    _Card(
+                      children: [
+                        Text('Отметка', style: Theme.of(context)
+                            .textTheme.titleMedium),
+                        const SizedBox(height: 4),
+                        Material(
+                          type: MaterialType.transparency,
+                          child: SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Поочерёдная отметка'),
+                            subtitle: const Text(
+                              'После отметки студента приложение само '
+                              'подсвечивает следующего',
+                            ),
+                            value: settings.sequentialMarking,
+                            onChanged: settings.setSequentialMarking,
+                          ),
+                        ),
+                      ],
+                    ),
                     if (hasSections) ...[
                       const SizedBox(height: 12),
                       _Card(

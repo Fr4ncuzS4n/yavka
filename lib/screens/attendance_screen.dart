@@ -100,19 +100,39 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void initState() {
     super.initState();
+    _lessonId = widget.lesson?.id;
     _selectedStudentId = _attendance.students.isEmpty
         ? null
         : _attendance.students.first.id;
-    _lessonId = widget.lesson?.id;
+    if (_sequential) {
+      final unmarked = _firstUnmarked();
+      if (unmarked != null) _selectedStudentId = unmarked.id;
+    }
     _attendance.addListener(_onAttendanceChanged);
     widget.schedule?.addListener(_onScheduleChanged);
+    widget.uiSettings?.addListener(_onUiSettingsChanged);
   }
 
   @override
   void dispose() {
     _attendance.removeListener(_onAttendanceChanged);
     widget.schedule?.removeListener(_onScheduleChanged);
+    widget.uiSettings?.removeListener(_onUiSettingsChanged);
     super.dispose();
+  }
+
+  /// Поочерёдная отметка включена в настройках.
+  bool get _sequential => widget.uiSettings?.sequentialMarking ?? false;
+
+  void _onUiSettingsChanged() {
+    if (!mounted) return;
+    final wasSequential = _sequential;
+    setState(() {});
+    if (!wasSequential && _sequential) {
+      // Режим только что включили: сразу подсвечиваем первого
+      // неотмеченного студента.
+      _snapToFirstUnmarked();
+    }
   }
 
   void _onAttendanceChanged() {
@@ -128,6 +148,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           _lessonId = null;
         }
       });
+      _snapToFirstUnmarked();
       return;
     }
     setState(() {});
@@ -142,6 +163,50 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       if (student.id == _selectedStudentId) return student;
     }
     return null;
+  }
+
+  /// Первый неотмеченный студент в текущем scope (день или пара),
+  /// либо `null`, если отмечены все.
+  Student? _firstUnmarked() {
+    for (final student in _attendance.students) {
+      if (_entryFor(student) == null) return student;
+    }
+    return null;
+  }
+
+  /// В режиме поочерёдной отметки подсвечивает первого неотмеченного
+  /// студента. Вызывается при включении режима и при смене дня или пары.
+  void _snapToFirstUnmarked() {
+    if (!_sequential) return;
+    final unmarked = _firstUnmarked();
+    if (unmarked == null || unmarked.id == _selectedStudentId) return;
+    setState(() {
+      _selectedStudentId = unmarked.id;
+      _absentArmed = false;
+    });
+  }
+
+  /// В режиме поочерёдной отметки подсвечивает следующего
+  /// неотмеченного студента после [from] (по кругу по списку группы).
+  ///
+  /// Если все отмечены — выделение остаётся на месте. Возвращает
+  /// `true`, если переход состоялся.
+  bool _advanceSequential(Student from) {
+    final students = _attendance.students;
+    if (!_sequential || students.isEmpty) return false;
+    final startIndex = students.indexWhere((student) => student.id == from.id);
+    for (
+      var step = 1;
+      step <= students.length;
+      step++
+    ) {
+      final candidate = students[(startIndex + step) % students.length];
+      if (_entryFor(candidate) == null) {
+        _selectedStudentId = candidate.id;
+        return true;
+      }
+    }
+    return false;
   }
 
   /// Студенты, к которым применится отметка (или её отмена).
@@ -265,6 +330,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       }
     });
     _attendance.selectDate(normalized);
+    _snapToFirstUnmarked();
   }
 
   /// Сдвигает день вперёд или назад, перепрыгивая выходные.
@@ -284,6 +350,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       _lessonId = lessonId;
       _absentArmed = false;
     });
+    _snapToFirstUnmarked();
   }
 
   /// Диалог выбора даты: выходные и будущие дни не выбрать.
@@ -326,7 +393,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       );
     }
     _queueLessonNotification();
-    setState(() => _absentArmed = false);
+    setState(() {
+      _absentArmed = false;
+      // Поочерёдная отметка: одиночная отметка подсвечивает следующего
+      // неотмеченного. Множественный выбор не продвигает.
+      if (!_multiSelect && targets.length == 1) {
+        _advanceSequential(targets.single);
+      }
+    });
   }
 
   Future<void> _markAbsent() async {
@@ -753,6 +827,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           key: kStudentListKey,
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
           children: [
+            if (_sequential && !_isWeekend && students.isNotEmpty) ...[
+              const _SequentialBanner(),
+              const SizedBox(height: 16),
+            ],
             _GroupHeader(
               title: lesson == null ? _groupTitle : 'Пара «${lesson.subject}»',
               subtitle: lesson == null
@@ -1191,6 +1269,7 @@ class _StatusButton extends StatelessWidget {
         : scheme.onSurfaceVariant;
 
     return DecoratedBox(
+      key: ValueKey('status-button-${status.name}'),
       decoration: decoration,
       child: Material(
         type: MaterialType.transparency,
@@ -1254,6 +1333,40 @@ class _ArmedHint extends StatelessWidget {
             child: Text(
               'Второе нажатие подтвердит отсутствие.',
               style: theme.textTheme.bodySmall,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// «Поочерёдная отметка включена»: полоса над списком группы.
+class _SequentialBanner extends StatelessWidget {
+  const _SequentialBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      key: const Key('sequential-banner'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: scheme.primaryContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.bolt_rounded, size: 18, color: scheme.onPrimaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Поочерёдная отметка: после отметки подсветится '
+              'следующий неотмеченный.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: scheme.onPrimaryContainer,
+              ),
             ),
           ),
         ],
