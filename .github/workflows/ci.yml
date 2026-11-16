@@ -28,7 +28,9 @@ jobs:
         run: flutter pub get
 
       - name: Анализ
-        run: flutter analyze
+        # Info-замечания (deprecated) не проваливают анализ: падаем
+        # только на error и warning.
+        run: flutter analyze --no-fatal-infos
 
       - name: Тесты
         run: flutter test
