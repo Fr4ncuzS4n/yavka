@@ -12,6 +12,8 @@ name: Release build
 #   yavka-linux-x64.AppImage     — AppImage (файл автообновления)
 #   yavka-windows-x64.zip        — архив для Windows
 #   yavka-windows-x64-setup.exe  — инсталлятор (файл автообновления)
+#   yavka-ios-unsigned.ipa       — iOS без подписи (для установки нужна
+#                                  подпись: TestFlight или пересборка)
 # Если версия не менялась — ничего не собирается.
 on:
   push:
@@ -160,6 +162,42 @@ jobs:
         run: |
           echo "Uploading to release $RELEASE_TAG"
           gh release upload "$RELEASE_TAG" yavka-android.apk --clobber --repo '${{ github.repository }}'
+
+  ios:
+    name: iOS (неподписанный IPA)
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+
+      # Без кодовой подписи: для подписи нужны сертификат Apple
+      # Developer и профиль — их в репозитории нет.
+      - name: Сборка iOS
+        run: flutter build ios --release --no-codesign ${{ env.DART_DEFINES }}
+
+      # Runner.app в Payload/ = IPA, который принимают сидлоад-инструменты
+      # и службы пересборки (AltStore, Sideloadly, TestFlight после подписи).
+      - name: Упаковка IPA
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry yavka-ios-unsigned.ipa Payload
+
+      - name: Загрузка в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Uploading to release $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" yavka-ios-unsigned.ipa --clobber --repo '${{ github.repository }}'
 
   linux:
     name: Linux x64
