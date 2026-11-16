@@ -19,11 +19,15 @@ class AvailableUpdate {
 /// Имя файла сборки в релизе для платформы.
 ///
 /// Названия повторяют файлы, которые прикладывает релизный workflow.
+/// Для автообновления предлагается самый простой в установке файл:
+/// AppImage на Linux (без рута и без зависимости от дистрибутива) и
+/// exe-инсталлятор на Windows. Остальные пакеты (tar.gz, deb, rpm и
+/// zip) пользователь может скачать со страницы релиза сам.
 /// Для web возвращается `null`: веб-версия всегда свежая, она
 /// обновляется вместе с сайтом.
 String? releaseAssetNameFor(TargetPlatform platform) => switch (platform) {
-  TargetPlatform.linux => 'yavka-linux-x64.zip',
-  TargetPlatform.windows => 'yavka-windows-x64.zip',
+  TargetPlatform.linux => 'yavka-linux-x64.AppImage',
+  TargetPlatform.windows => 'yavka-windows-x64-setup.exe',
   TargetPlatform.android => 'yavka-android.apk',
   _ => null,
 };
@@ -157,10 +161,11 @@ class UpdateController extends ChangeNotifier {
 
     final assets = json['assets'];
     if (assets is List) {
+      final wanted = assetName.toLowerCase();
       for (final asset in assets) {
         if (asset is! Map) continue;
         final name = asset['name']?.toString().toLowerCase() ?? '';
-        if (name != assetName) continue;
+        if (name != wanted) continue;
         final url = asset['browser_download_url']?.toString() ?? '';
         if (url.isNotEmpty) {
           return AvailableUpdate(version: version, downloadUrl: url);

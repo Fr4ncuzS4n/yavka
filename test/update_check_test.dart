@@ -16,9 +16,9 @@ String releaseJson({
 });
 
 const asset = {
-  'name': 'yavka-linux-x64.zip',
+  'name': 'yavka-linux-x64.AppImage',
   'browser_download_url': 'https://github.com/Fr4ncuzS4n/yavka/releases/'
-      'download/v1.2.0/yavka-linux-x64.zip',
+      'download/v1.2.0/yavka-linux-x64.AppImage',
 };
 
 void main() {
@@ -49,8 +49,8 @@ void main() {
 
   group('releaseAssetNameFor', () {
     for (final entry in {
-      TargetPlatform.linux: 'yavka-linux-x64.zip',
-      TargetPlatform.windows: 'yavka-windows-x64.zip',
+      TargetPlatform.linux: 'yavka-linux-x64.AppImage',
+      TargetPlatform.windows: 'yavka-windows-x64-setup.exe',
       TargetPlatform.android: 'yavka-android.apk',
       TargetPlatform.iOS: null,
     }.entries) {
@@ -97,7 +97,7 @@ void main() {
       expect(
         update.downloadUrl,
         'https://github.com/Fr4ncuzS4n/yavka/releases/'
-        'download/v1.2.0/yavka-linux-x64.zip',
+        'download/v1.2.0/yavka-linux-x64.AppImage',
       );
       expect(updates.isChecking, isFalse);
     });
