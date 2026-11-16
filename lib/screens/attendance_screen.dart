@@ -291,8 +291,36 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // -- Выбор дня и пары ------------------------------------------------------
 
   /// Пары расписания на выбранный день.
-  List<ScheduleLesson> get _dayLessons =>
-      widget.schedule?.lessonsFor(_day.weekday) ?? const [];
+  ///
+  /// Если расписание не заполнено, подставляется временное —
+  /// порядок пар (1–8), чтобы можно было отмечать по парам.
+  List<ScheduleLesson> get _dayLessons {
+    final scheduled = widget.schedule?.lessonsFor(_day.weekday) ?? const [];
+    if (scheduled.isNotEmpty) return scheduled;
+    return _temporaryLessons(_day.weekday);
+  }
+
+  /// Временное расписание-порядок: пары 1–8 на день без расписания.
+  List<ScheduleLesson> _temporaryLessons(int weekday) => const [
+    (1, 8 * 60 + 30, 10 * 60 + 5),
+    (2, 10 * 60 + 15, 11 * 60 + 50),
+    (3, 12 * 60 + 30, 14 * 60 + 5),
+    (4, 14 * 60 + 15, 15 * 60 + 50),
+    (5, 16 * 60 + 0, 17 * 60 + 35),
+    (6, 17 * 60 + 45, 19 * 60 + 20),
+    (7, 19 * 60 + 30, 21 * 60 + 5),
+    (8, 21 * 60 + 15, 22 * 60 + 50),
+  ]
+      .map(
+        (pair) => ScheduleLesson(
+          id: 'temp-pair-${pair.$1}',
+          weekday: weekday,
+          startMinutes: pair.$2,
+          endMinutes: pair.$3,
+          subject: '${pair.$1} пара',
+        ),
+      )
+      .toList(growable: false);
 
   /// Выбранная пара (null — отметки на весь день).
   ScheduleLesson? get _selectedLesson {
