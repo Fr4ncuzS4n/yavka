@@ -317,15 +317,13 @@ jobs:
           set -e
           apt-get update -q
           apt-get install -y rpm-build
-          # ALT не любит сборку под root — строим от пользователя builder.
-          useradd -m builder
-          mkdir -p /home/builder/rpmbuild/BUILD /home/builder/rpmbuild/RPMS \
-            /home/builder/rpmbuild/SPECS
-          cp /work/yavka-alt.spec /home/builder/rpmbuild/SPECS/
-          chown -R builder:builder /home/builder/rpmbuild
-          su - builder -c 'rpmbuild -bb --define "_topdir $HOME/rpmbuild" \
-            $HOME/rpmbuild/SPECS/yavka-alt.spec'
-          cp /home/builder/rpmbuild/RPMS/x86_64/yavka-*.rpm \
+          # В минимальном контейнере нет su, поэтому собираем под root,
+          # но с деревом сборки в /tmp, а не в системных путях.
+          mkdir -p /tmp/rpmbuild/BUILD /tmp/rpmbuild/RPMS /tmp/rpmbuild/SPECS
+          cp /work/yavka-alt.spec /tmp/rpmbuild/SPECS/
+          rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
+            /tmp/rpmbuild/SPECS/yavka-alt.spec
+          cp /tmp/rpmbuild/RPMS/x86_64/yavka-*.rpm \
             /work/yavka-linux-x64-alt.rpm
           EOF
           chmod +x "$GITHUB_WORKSPACE/build-alt-rpm.sh"
