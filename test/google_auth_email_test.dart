@@ -1,4 +1,9 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:yavka/services/cloud/google_account_api.dart';
 import 'package:yavka/services/cloud/google_auth_service.dart';
 import 'package:yavka/services/cloud/oauth/oauth_models.dart';
 import 'package:yavka/services/cloud/token_store.dart';
@@ -10,10 +15,13 @@ GoogleOAuthConfig _config() => const GoogleOAuthConfig(
 );
 
 class FakeFlow implements OAuthFlow {
-  FakeFlow({this.refreshEmail});
+  FakeFlow({this.refreshEmail, this.refreshFails = false});
 
   /// Почта, которую Google возвращает при продлении токена.
   final String? refreshEmail;
+
+  /// Продление всегда падает: телефон включили без интернета.
+  final bool refreshFails;
 
   @override
   Future<OAuthTokens> signIn(GoogleOAuthConfig config) async => OAuthTokens(
@@ -27,13 +35,20 @@ class FakeFlow implements OAuthFlow {
   Future<OAuthTokens> refresh(
     GoogleOAuthConfig config,
     OAuthTokens tokens,
-  ) async => OAuthTokens(
-    accessToken: 'new-access-token',
-    refreshToken: tokens.refreshToken,
-    expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
-    scopes: tokens.scopes,
-    email: refreshEmail,
-  );
+  ) async {
+    if (refreshFails) {
+      throw const OAuthException(
+        'Google не отвечает. Проверьте интернет и попробуйте снова.',
+      );
+    }
+    return OAuthTokens(
+      accessToken: 'new-access-token',
+      refreshToken: tokens.refreshToken,
+      expiresAt: DateTime.now().toUtc().add(const Duration(hours: 1)),
+      scopes: tokens.scopes,
+      email: refreshEmail,
+    );
+  }
 
   @override
   Future<void> signOut(OAuthTokens? tokens) async {}
@@ -156,4 +171,72 @@ void main() {
     await auth.restore();
     expect(auth.accountEmail, 'restored@mail.ru');
   });
+
+  test('токены сохраняются, даже если запрос почты завис навсегда', () async {
+    final tokens = MemoryTokenStore();
+    final auth = GoogleAuthService(
+      flow: FakeFlow(),
+      tokenStore: tokens,
+      // Запрос почты никогда не завершается: раньше он держал вход и
+      // не давал сохранить токены — на Android это выглядело как
+      // «аккаунт не сохраняется, кнопки неактивны».
+      accountEmailFetcher: (token) => Completer<String?>().future,
+    );
+    auth.configure(_config());
+
+    await fakeAsync((async) {
+      unawaited(auth.signIn());
+      // Таймаут запроса почты — 15 секунд, продлеваем часы теста.
+      async.elapse(const Duration(minutes: 1));
+    });
+
+    expect(auth.isSignedIn, isTrue);
+    final saved = await tokens.load();
+    expect(saved, isNotNull);
+    expect(saved!.accessToken, 'access-token');
+  });
+
+  test('ошибка продления токена не стирает аккаунт', () async {
+    final tokens = MemoryTokenStore();
+    final auth = GoogleAuthService(
+      flow: FakeFlow(refreshFails: true),
+      tokenStore: tokens,
+      accountEmailFetcher: (token) async => 'ivan@mail.ru',
+    );
+    auth.configure(_config());
+    await auth.signIn();
+
+    // Телефон включили без сети: токен истёк, продлить не удалось.
+    final saved = await tokens.load();
+    await tokens.save(
+      saved!.copyWithExpiry(
+        DateTime.now().toUtc().subtract(const Duration(minutes: 5)),
+      ),
+    );
+    await auth.restore();
+
+    expect(auth.isSignedIn, isTrue);
+    final stillThere = await tokens.load();
+    expect(stillThere, isNotNull);
+    expect(stillThere!.refreshToken, 'refresh-token');
+    expect(auth.error, isNotNull);
+  });
+
+  test('запрос почты отвечает null, когда Google не отвечает', () async {
+    final api = GoogleAccountApi(
+      client: HangingHttpClient(),
+      emailTimeout: const Duration(milliseconds: 50),
+    );
+    expect(await api.fetchEmail('token'), isNull);
+  });
+}
+
+/// HTTP-клиент, у которого каждый запрос висит вечно.
+class HangingHttpClient implements http.Client {
+  @override
+  Future<http.Response> get(Uri url, {Map<String, String>? headers}) =>
+      Completer<http.Response>().future;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError();
 }

@@ -26,6 +26,11 @@ class IoOAuthFlow implements OAuthFlow {
   static const _charset =
       'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~';
 
+  /// Сколько ждём ответа Google. Без таймаута зависший запрос (сеть
+  /// отвалилась, пока приложение в фоне) держал вход «вечно»: все
+  /// кнопки оставались неактивными, токены не сохранялись.
+  static const _networkTimeout = Duration(seconds: 60);
+
   final http.Client _client;
 
   @override
@@ -96,15 +101,17 @@ class IoOAuthFlow implements OAuthFlow {
       throw const OAuthException('Сессия Google истекла. Войдите снова.');
     }
 
-    final response = await _client.post(
-      Uri.parse(_tokenEndpoint),
-      body: {
-        'client_id': config.clientId!,
-        'client_secret': config.clientSecret!,
-        'refresh_token': refreshToken,
-        'grant_type': 'refresh_token',
-      },
-    );
+    final response = await _client
+        .post(
+          Uri.parse(_tokenEndpoint),
+          body: {
+            'client_id': config.clientId!,
+            'client_secret': config.clientSecret!,
+            'refresh_token': refreshToken,
+            'grant_type': 'refresh_token',
+          },
+        )
+        .timeout(_networkTimeout, onTimeout: () { throw _timeoutError(); });
 
     final json = _decodeTokenResponse(response);
     return OAuthTokens(
@@ -210,17 +217,19 @@ class IoOAuthFlow implements OAuthFlow {
     required String verifier,
     required String redirectUri,
   }) async {
-    final response = await _client.post(
-      Uri.parse(_tokenEndpoint),
-      body: {
-        'client_id': config.clientId!,
-        'client_secret': config.clientSecret!,
-        'code': code,
-        'code_verifier': verifier,
-        'grant_type': 'authorization_code',
-        'redirect_uri': redirectUri,
-      },
-    );
+    final response = await _client
+        .post(
+          Uri.parse(_tokenEndpoint),
+          body: {
+            'client_id': config.clientId!,
+            'client_secret': config.clientSecret!,
+            'code': code,
+            'code_verifier': verifier,
+            'grant_type': 'authorization_code',
+            'redirect_uri': redirectUri,
+          },
+        )
+        .timeout(_networkTimeout, onTimeout: () { throw _timeoutError(); });
 
     final json = _decodeTokenResponse(response);
     return OAuthTokens(
@@ -230,6 +239,10 @@ class IoOAuthFlow implements OAuthFlow {
       scopes: _scopesFrom(json, fallback: kGoogleSheetsScopes),
     );
   }
+
+  OAuthException _timeoutError() => const OAuthException(
+    'Google не отвечает. Проверьте интернет и попробуйте снова.',
+  );
 
   Map<String, dynamic> _decodeTokenResponse(http.Response response) {
     Map<String, dynamic> json;

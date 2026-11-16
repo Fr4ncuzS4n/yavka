@@ -81,11 +81,17 @@ class GoogleAuthService extends ChangeNotifier {
     notifyListeners();
     try {
       var tokens = await _flow.signIn(_config);
+      // Токены сохраняются сразу: запрос почты может зависнуть или
+      // не удаться, но аккаунт не должен теряться из-за неё.
       _tokens = tokens;
       notifyListeners();
-      tokens = await _fillEmail(tokens) ?? tokens;
-      _tokens = tokens;
       await _tokenStore.save(tokens);
+      final withEmail = await _fillEmail(tokens) ?? tokens;
+      if (withEmail.email != tokens.email) {
+        tokens = withEmail;
+        _tokens = tokens;
+        await _tokenStore.save(tokens);
+      }
     } catch (error) {
       _error = _message(error);
       rethrow;
@@ -137,13 +143,19 @@ class GoogleAuthService extends ChangeNotifier {
       notifyListeners();
       return updated;
     } catch (error) {
-      _tokens = null;
       _error = _message(error);
-      await _tokenStore.save(null);
+      // Сетевая ошибка (нет интернета, таймаут) не отменяет вход:
+      // токены остаются и продлятся при следующем запросе. Иначе
+      // перезапуск без сети стирал аккаунт, будто выхода не было.
       notifyListeners();
       return null;
     }
   }
+
+  /// Сколько ждём почту у Google — чтобы зависший запрос не держал
+  /// вход (на Android запрос мог висеть бесконечно, и все кнопки
+  /// экрана оставались неактивными).
+  static const _emailTimeout = Duration(seconds: 15);
 
   /// Дособирает почту аккаунта, если токены её ещё не содержат.
   Future<OAuthTokens?> _fillEmail([OAuthTokens? source]) async {
@@ -152,7 +164,14 @@ class GoogleAuthService extends ChangeNotifier {
     final fetcher = _accountEmailFetcher;
     if (fetcher == null) return tokens;
     try {
-      final email = await fetcher(tokens.accessToken);
+      // `then<String?>` выравнивает тип результата: fetcher может
+      // возвращать и `String`, и `String?` — таймауту нужен `String?`.
+      final email = await fetcher(
+        tokens.accessToken,
+      ).then<String?>((value) => value).timeout(
+        _emailTimeout,
+        onTimeout: () => null,
+      );
       if (email == null || email.isEmpty) return tokens;
       final updated = tokens.withEmail(email);
       _tokens = updated;
