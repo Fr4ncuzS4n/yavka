@@ -50,18 +50,18 @@ Future<void> _openTab(WidgetTester tester, String label) async {
 }
 
 void main() {
-  testWidgets('на вкладках субботы и воскресенья нет кнопки «Отметить»', (
+  testWidgets('вкладки воскресенья нет, на вкладке субботы нет кнопки «Отметить»', (
     tester,
   ) async {
     await _pump(tester);
 
+    // Воскресенье не показывается вовсе — пары 7 не видно нигде.
+    expect(find.text('вс'), findsNothing);
+    expect(find.text('Пара 7'), findsNothing);
+
     await _openTab(tester, 'сб');
     expect(find.text('Отметить'), findsNothing);
     expect(find.text('Пара 6'), findsOneWidget);
-
-    await _openTab(tester, 'вс');
-    expect(find.text('Отметить'), findsNothing);
-    expect(find.text('Пара 7'), findsOneWidget);
   });
 
   testWidgets('на вкладке «сегодня»: чип отметки в будни, баннер в выходные', (
@@ -69,11 +69,15 @@ void main() {
   ) async {
     await _pump(tester);
 
-    // Начальная вкладка — сегодняшний день недели.
-    final isWeekendToday =
-        DateTime.now().weekday >= DateTime.saturday;
-    if (isWeekendToday) {
+    // Начальная вкладка — сегодняшний день недели (в воскресенье —
+    // суббота, потому что вкладки воскресенья больше нет).
+    final today = DateTime.now().weekday;
+    if (today == DateTime.saturday) {
       expect(find.text(kWeekendNotice), findsOneWidget);
+      expect(find.text('Отметить'), findsNothing);
+    } else if (today == DateTime.sunday) {
+      // Показана суббота, а не «сегодня»: баннера выходного нет.
+      expect(find.text(kWeekendNotice), findsNothing);
       expect(find.text('Отметить'), findsNothing);
     } else {
       expect(find.text(kWeekendNotice), findsNothing);
