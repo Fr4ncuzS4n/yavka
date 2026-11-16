@@ -221,6 +221,8 @@ jobs:
           ln -s /opt/yavka/yavka "$pkg/usr/bin/yavka"
           cp "$GITHUB_WORKSPACE/yavka.desktop" "$pkg/usr/share/applications/"
           cp web/icons/Icon-512.png "$pkg/usr/share/icons/hicolor/512x512/apps/yavka.png"
+          mkdir -p "$pkg/usr/share/doc/yavka"
+          cp LICENSE "$pkg/usr/share/doc/yavka/copyright"
           cat > "$pkg/DEBIAN/control" <<EOF
           Package: yavka
           Version: $BASE_VERSION
@@ -240,7 +242,7 @@ jobs:
           Version:        $BASE_VERSION
           Release:        1
           Summary:        Явка — учёт посещаемости
-          License:        Proprietary
+          License:        GPL-3.0-only
           BuildArch:      x86_64
           Requires:       gtk3 glib2 dbus-libs
 
@@ -250,18 +252,21 @@ jobs:
           %install
           mkdir -p %{buildroot}/opt/yavka %{buildroot}%{_bindir} \\
             %{buildroot}%{_datadir}/applications \\
-            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps
+            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps \\
+            %{buildroot}%{_docdir}/yavka
           cp -r "$GITHUB_WORKSPACE/build/linux/x64/release/bundle/." %{buildroot}/opt/yavka/
           ln -s /opt/yavka/yavka %{buildroot}%{_bindir}/yavka
           cp "$GITHUB_WORKSPACE/yavka.desktop" %{buildroot}%{_datadir}/applications/
           cp "$GITHUB_WORKSPACE/web/icons/Icon-512.png" \\
             %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          cp "$GITHUB_WORKSPACE/LICENSE" %{buildroot}%{_docdir}/yavka/LICENSE
 
           %files
           /opt/yavka
           %{_bindir}/yavka
           %{_datadir}/applications/yavka.desktop
           %{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          %{_docdir}/yavka/LICENSE
           EOF
           mkdir -p .rpmbuild/BUILD .rpmbuild/RPMS .rpmbuild/SPECS
           rpmbuild -bb --define "_topdir $PWD/.rpmbuild" "$GITHUB_WORKSPACE/yavka.spec"
@@ -278,7 +283,7 @@ jobs:
           Version:        $BASE_VERSION
           Release:        alt1
           Summary:        Явка — учёт посещаемости
-          License:        Proprietary
+          License:        GPL-3.0-only
           Group:          Office
           BuildArch:      x86_64
           BuildRoot:      %{_topdir}/BUILDROOT/%{name}-%{version}
@@ -291,18 +296,21 @@ jobs:
           %install
           mkdir -p %{buildroot}/opt/yavka %{buildroot}%{_bindir} \\
             %{buildroot}%{_datadir}/applications \\
-            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps
+            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps \\
+            %{buildroot}%{_docdir}/yavka
           cp -r /work/build/linux/x64/release/bundle/. %{buildroot}/opt/yavka/
           ln -s /opt/yavka/yavka %{buildroot}%{_bindir}/yavka
           cp /work/yavka.desktop %{buildroot}%{_datadir}/applications/
           cp /work/web/icons/Icon-512.png \\
             %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          cp /work/LICENSE %{buildroot}%{_docdir}/yavka/LICENSE
 
           %files
           /opt/yavka
           %{_bindir}/yavka
           %{_datadir}/applications/yavka.desktop
           %{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          %{_docdir}/yavka/LICENSE
           EOF
           cat > "$GITHUB_WORKSPACE/build-alt-rpm.sh" <<'EOF'
           #!/bin/bash
@@ -342,6 +350,8 @@ jobs:
           cp "$GITHUB_WORKSPACE/yavka.desktop" "$appdir/yavka.desktop"
           cp "$GITHUB_WORKSPACE/yavka.desktop" "$appdir/usr/share/applications/"
           cp web/icons/Icon-512.png "$appdir/yavka.png"
+          mkdir -p "$appdir/usr/share/doc/yavka"
+          cp LICENSE "$appdir/usr/share/doc/yavka/LICENSE"
           cp web/icons/Icon-512.png "$appdir/usr/share/icons/hicolor/512x512/apps/yavka.png"
           ln -s yavka.png "$appdir/.DirIcon"
           cat > "$appdir/AppRun" <<'EOF'
