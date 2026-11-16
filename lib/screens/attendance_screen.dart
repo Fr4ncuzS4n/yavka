@@ -515,9 +515,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           if (widget.cloud != null) _buildCloudAction(context),
           if (widget.uiSettings != null)
             IconButton(
-              tooltip: 'Дизайн',
+              tooltip: 'Настройки',
               onPressed: () => _openSettings(context),
-              icon: const Icon(Icons.palette_outlined),
+              icon: const Icon(Icons.settings_outlined),
             ),
           const SizedBox(width: 4),
         ],
@@ -610,7 +610,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 if (_useRowForLessons)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: Row(children: _lessonChips()),
+                    child: Row(spacing: 8, children: _lessonChips()),
                   )
                 else
                   Wrap(spacing: 8, runSpacing: 8, children: _lessonChips()),
