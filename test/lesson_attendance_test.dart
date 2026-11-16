@@ -343,4 +343,41 @@ void main() {
     expect(parseClockTime('25:00'), isNull);
     expect(parseClockTime('не время'), isNull);
   });
+
+  test('счётчик «весь день» считает студентов, а не ячейки отметок', () {
+    // Алексей с дневной отметкой, Мария отмечена на двух парах,
+    // Пётр не отмечен вовсе. Ячеек три, студентов с отметками — два.
+    final attendance = AttendanceController(
+      session: AttendanceSession(
+        groupName: 'БИТ-24-03',
+        students: const [
+          ...students,
+          Student(id: '3', fullName: 'Пётр Ветров'),
+        ],
+        date: DateTime(2026, 11, 9), // понедельник
+      ),
+    );
+    final now = DateTime.now();
+    final alexey = students[0];
+    final maria = students[1];
+
+    attendance.mark(alexey, AttendanceStatus.came, now); // дневная отметка
+    attendance.mark(
+      maria,
+      AttendanceStatus.came,
+      now,
+      lessonKey: lesson.id,
+      lessonTitle: lesson.subject,
+    );
+    attendance.mark(
+      maria,
+      AttendanceStatus.late,
+      now,
+      lessonKey: '${lesson.id}-2',
+      lessonTitle: 'Физика',
+    );
+
+    expect(attendance.entries.length, 3); // три ячейки
+    expect(attendance.session.markedCountForDay, 2); // два студента
+  });
 }

@@ -485,10 +485,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  /// Сколько студентов отмечено в текущем режиме.
+  /// Сколько студентов отмечено в текущем режиме: на паре — отметки
+  /// этой пары, «весь день» — разные студенты с любой отметкой дня.
   int get _markedCount {
     final lesson = _selectedLesson;
-    if (lesson == null) return _attendance.entries.length;
+    if (lesson == null) return _attendance.session.markedCountForDay;
     return _attendance.session.markedCountInLesson(
       lessonKey: lesson.id,
       lessonTitle: lesson.subject,

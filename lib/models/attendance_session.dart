@@ -129,6 +129,14 @@ class AttendanceSession {
             entry.lessonTitle == title;
       }).length;
 
+  /// Сколько разных студентов отмечено за день — на весь день или
+  /// хотя бы на одной паре. Ячейки не суммируются: студент, отмеченный
+  /// на трёх парах, считается один раз.
+  int get markedCountForDay => entries.keys
+      .map((key) => key.split('|').first.trim())
+      .toSet()
+      .length;
+
   /// Создаёт пустую сессию на сегодня.
   factory AttendanceSession.forToday({
     required String groupName,
