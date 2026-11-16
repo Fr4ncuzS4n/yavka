@@ -107,3 +107,36 @@ footer {
   text-align: center;
   margin-top: 24px;
 }
+
+/* Баннер «используйте веб-версию» на телефоне */
+.mobile-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.mobile-banner p { margin: 0; font-size: 15px; }
+.mobile-banner a { color: #fff; text-decoration: underline; }
+.mobile-banner-close {
+  margin-left: auto;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mobile-banner-close:hover { background: rgba(255, 255, 255, .28); }
