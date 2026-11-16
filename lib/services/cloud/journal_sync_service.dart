@@ -103,6 +103,13 @@ class JournalSyncService {
     }
 
     final layout = JournalLayout.scan(grid, mapping);
+    // Временный порядок пар подстраивается под журнал: пар в дне —
+    // сколько колонок пар у одного дня таблицы (обычно 3–4). Тогда
+    // сверка показывает честное число пар и отметки раскладываются
+    // ровно в колонки дня, а не мимо них.
+    if (schedule != null && layout != null) {
+      schedule.temporaryPairCount = _typicalPairCount(layout);
+    }
     final check = JournalCheck.check(
       month: month ?? DateTime.now(),
       mapping: mapping,
@@ -110,6 +117,32 @@ class JournalSyncService {
       schedule: schedule ?? ScheduleController.inMemory(),
     );
     return JournalSnapshot(month: month, layout: layout, check: check);
+  }
+
+  /// Самое частое число колонок пар у дня журнала.
+  ///
+  /// Номера пар берутся из строки «ПАРА»; если её нет — блоку дня
+  /// считается ширина. Ничего не нашлось — обычные 4 пары.
+  int _typicalPairCount(JournalLayout layout) {
+    final tally = <int, int>{};
+    for (final span in layout.spans) {
+      final count = span.pairs.isNotEmpty ? span.pairs.length : span.width;
+      if (count < 1) continue;
+      tally[count] = (tally[count] ?? 0) + 1;
+    }
+    if (tally.isEmpty) return 4;
+    // При равной частоте берём меньшее: такой день точно поместится в
+    // свои колонки, а недостающие пары просто не будут отмечаться.
+    var best = 4;
+    var bestSeen = -1;
+    final sorted = tally.keys.toList()..sort();
+    for (final count in sorted) {
+      if (tally[count]! > bestSeen) {
+        best = count;
+        bestSeen = tally[count]!;
+      }
+    }
+    return best.clamp(1, 12);
   }
 
   /// Отправляет отметки в журнал: только заливка и текст ячейки пары.
@@ -144,6 +177,11 @@ class JournalSyncService {
         'настройку журнала.',
       );
     }
+    // Как и в [snapshot]: при пустом расписании временный порядок пар
+    // подстраивается под колонки пар одного дня журнала.
+    if (schedule != null) {
+      schedule.temporaryPairCount = _typicalPairCount(layout);
+    }
 
     final sheetId = _tabId(meta.tabs, mapping.tabTitle);
     final rowsOfStudent = _rowsOfStudents(grid, mapping);
@@ -160,6 +198,10 @@ class JournalSyncService {
       if (weekdayOf(session.date) >= 6) continue;
 
       final span = layout.spanOf(session.date.day);
+      // Число пар — только настоящее расписание: при пустом расписании
+      // отметки на весь день раскладываются по всем колонкам пар дня
+      // (как раньше), а временный порядок пар нужен лишь для сопоставления
+      // отметок конкретных пар — см. [_pairNumberOf].
       final schedulePairs =
           schedule?.lessonsFor(weekdayOf(session.date)).length ?? 0;
 
@@ -346,7 +388,7 @@ class JournalSyncService {
   ) {
     final lessons = schedule == null
         ? const <ScheduleLesson>[]
-        : schedule.lessonsFor(weekdayOf(date));
+        : schedule.effectiveLessonsFor(weekdayOf(date));
     if (pairNumber >= 1 && pairNumber <= lessons.length) {
       return (lessons[pairNumber - 1].id, lessons[pairNumber - 1].subject);
     }
@@ -368,7 +410,7 @@ class JournalSyncService {
   ) {
     final lessons = schedule == null
         ? const <ScheduleLesson>[]
-        : schedule.lessonsFor(weekdayOf(date));
+        : schedule.effectiveLessonsFor(weekdayOf(date));
     final key = entry.lessonKey?.trim();
     if (key != null && key.isNotEmpty) {
       for (var i = 0; i < lessons.length; i++) {

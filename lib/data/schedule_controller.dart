@@ -54,6 +54,61 @@ class ScheduleController extends ChangeNotifier {
     return List.unmodifiable(result);
   }
 
+  /// Сколько пар показывать в дне без расписания.
+  ///
+  /// Порядок пар — временное расписание: обычно в день 3–4 пары. После
+  /// подключения журнала количество подстраивается под число колонок
+  /// пар у одного дня таблицы (см. [JournalSyncService]).
+  int get temporaryPairCount => _temporaryPairCount;
+  int _temporaryPairCount = 4;
+
+  set temporaryPairCount(int value) {
+    final clamped = value.clamp(1, 12);
+    if (clamped == _temporaryPairCount) return;
+    _temporaryPairCount = clamped;
+    notifyListeners();
+  }
+
+  /// Пары дня для отметок: настоящие, а если расписания нет вовсе —
+  /// временный порядок пар («Пара 1», «Пара 2»…).
+  ///
+  /// Названия совпадают с журнальными («Пара N»), поэтому отметки,
+  /// загруженные из таблицы, попадают в те же пары. При частичном
+  /// расписании (заполнены не все дни) временные пары не показываются:
+  /// дни без пар отмечаются «весь день», как раньше.
+  List<ScheduleLesson> effectiveLessonsFor(int weekday) {
+    if (_lessons.isEmpty) return _temporaryLessons(weekday);
+    return lessonsFor(weekday);
+  }
+
+  /// Временное расписание-порядок: пары [temporaryPairCount] штук.
+  List<ScheduleLesson> _temporaryLessons(int weekday) {
+    const slots = [
+      (8 * 60 + 30, 10 * 60 + 5),
+      (10 * 60 + 15, 11 * 60 + 50),
+      (12 * 60 + 30, 14 * 60 + 5),
+      (14 * 60 + 15, 15 * 60 + 50),
+      (16 * 60, 17 * 60 + 35),
+      (17 * 60 + 45, 19 * 60 + 20),
+      (19 * 60 + 30, 21 * 60 + 5),
+      (21 * 60 + 15, 22 * 60 + 50),
+      (22 * 60 + 15, 23 * 60 + 50),
+      (22 * 60 + 45, 23 * 60 + 59),
+      (23 * 60, 23 * 60 + 59),
+      (23 * 60 + 15, 23 * 60 + 59),
+    ];
+    return [
+      for (var i = 1; i <= _temporaryPairCount; i++)
+        ScheduleLesson(
+          id: 'temp-pair-$i',
+          weekday: weekday,
+          startMinutes: slots[i - 1].$1,
+          endMinutes: slots[i - 1].$2,
+          subject: 'Пара $i',
+        ),
+    ];
+  }
+
   ScheduleLesson? byId(String id) {
     for (final lesson in _lessons) {
       if (lesson.id == id) return lesson;

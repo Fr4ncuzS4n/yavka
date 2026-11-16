@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../data/attendance_controller.dart';
@@ -291,36 +292,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   // -- Выбор дня и пары ------------------------------------------------------
 
   /// Пары расписания на выбранный день.
-  ///
-  /// Если расписание не заполнено, подставляется временное —
-  /// порядок пар (1–8), чтобы можно было отмечать по парам.
-  List<ScheduleLesson> get _dayLessons {
-    final scheduled = widget.schedule?.lessonsFor(_day.weekday) ?? const [];
-    if (scheduled.isNotEmpty) return scheduled;
-    return _temporaryLessons(_day.weekday);
-  }
-
-  /// Временное расписание-порядок: пары 1–8 на день без расписания.
-  List<ScheduleLesson> _temporaryLessons(int weekday) => const [
-    (1, 8 * 60 + 30, 10 * 60 + 5),
-    (2, 10 * 60 + 15, 11 * 60 + 50),
-    (3, 12 * 60 + 30, 14 * 60 + 5),
-    (4, 14 * 60 + 15, 15 * 60 + 50),
-    (5, 16 * 60 + 0, 17 * 60 + 35),
-    (6, 17 * 60 + 45, 19 * 60 + 20),
-    (7, 19 * 60 + 30, 21 * 60 + 5),
-    (8, 21 * 60 + 15, 22 * 60 + 50),
-  ]
-      .map(
-        (pair) => ScheduleLesson(
-          id: 'temp-pair-${pair.$1}',
-          weekday: weekday,
-          startMinutes: pair.$2,
-          endMinutes: pair.$3,
-          subject: '${pair.$1} пара',
-        ),
-      )
-      .toList(growable: false);
+  List<ScheduleLesson> get _dayLessons =>
+      widget.schedule?.effectiveLessonsFor(_day.weekday) ?? const [];
 
   /// Выбранная пара (null — отметки на весь день).
   ScheduleLesson? get _selectedLesson {
@@ -332,6 +305,28 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final fixed = widget.lesson;
     if (fixed != null && fixed.id == id) return fixed;
     return null;
+  }
+
+  /// Чипы выбора: «Весь день» и пары дня.
+  List<Widget> _lessonChips() => [
+    ChoiceChip(
+      label: const Text('Весь день'),
+      selected: _lessonId == null,
+      onSelected: (_) => _selectLesson(null),
+    ),
+    for (final lesson in _dayLessons)
+      ChoiceChip(
+        label: Text('${lesson.startLabel} · ${lesson.subject}'),
+        selected: _lessonId == lesson.id,
+        onSelected: (_) => _selectLesson(lesson.id),
+      ),
+  ];
+
+  /// На Android пары идут одной строкой (Row со скроллом), на других
+  /// платформах — переносятся в несколько строк (Wrap).
+  bool get _useRowForLessons {
+    if (kIsWeb || isDesktopLayout()) return false;
+    return defaultTargetPlatform == TargetPlatform.android;
   }
 
   /// Самая ранняя дата, за которую можно отметить (год назад).
@@ -610,23 +605,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
               if (_dayLessons.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    ChoiceChip(
-                      label: const Text('Весь день'),
-                      selected: _lessonId == null,
-                      onSelected: (_) => _selectLesson(null),
-                    ),
-                    for (final lesson in _dayLessons)
-                      ChoiceChip(
-                        label: Text('${lesson.startLabel} · ${lesson.subject}'),
-                        selected: _lessonId == lesson.id,
-                        onSelected: (_) => _selectLesson(lesson.id),
-                      ),
-                  ],
-                ),
+                // На Android пары идут одной строкой со скроллом; на
+                // остальных платформах — переноской в несколько строк.
+                if (_useRowForLessons)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: _lessonChips()),
+                  )
+                else
+                  Wrap(spacing: 8, runSpacing: 8, children: _lessonChips()),
               ],
               if (_isWeekend) ...[
                 const SizedBox(height: 8),

@@ -90,10 +90,18 @@ abstract final class JournalCheck {
       // В выходные отмечать нельзя, поэтому колонок под них в журнале
       // нет — и требовать их не нужно.
       if (weekdayOf(date) >= 6) continue;
-      final pairs = schedule.lessonsFor(weekdayOf(date)).length;
+      // Число пар — по настоящему расписанию. Если расписание пустое
+      // вовсе, ориентируемся на сам журнал: пар в дне — сколько колонок
+      // пар в его блоке (обычно 3–4), порядок задаёт строка «ПАРА».
+      final realPairs = schedule.lessonsFor(weekdayOf(date)).length;
+      var pairs = realPairs;
+      final span = layout.spanOf(day);
+      if (realPairs == 0 && schedule.lessons.isEmpty) {
+        if (span == null) continue;
+        pairs = span.pairs.length;
+      }
       if (pairs == 0) continue; // дня без пар в таблице может и не быть
 
-      final span = layout.spanOf(day);
       if (span == null) {
         // Журнал может начинаться не с 1 числа: дня нет — отметки в
         // него не расставить, но и синхронизацию блокировать нечего.

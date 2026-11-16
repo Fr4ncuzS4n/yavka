@@ -252,7 +252,7 @@ void main() {
     );
   });
 
-  test('пустое расписание — проверять нечего', () async {
+  test('пустое расписание — пары в дне берутся из самого журнала', () async {
     final api = FakeSheetsApi();
     seedJournal(api, month: month, pairsByDay: pairsByDay, students: [alexey]);
     final grid = (await api.getSheetGrid('sid', 'НОЯБРЬ : 2026'))!;
@@ -266,6 +266,21 @@ void main() {
     );
 
     expect(report.ok, isTrue);
-    expect(report.rows, isEmpty);
+    expect(report.issues, isEmpty);
+    // Расписание пустое: приложение не может требовать свои пары, но
+    // порядок пар дня оно всё же показывает — из строки «ПАРА» журнала.
+    expect(report.warnings, isEmpty);
+    // В отчёте все рабочие дни ноября (выходных колонок в журнале нет).
+    expect(report.rows, isNotEmpty);
+    for (final row in report.rows) {
+      expect(weekdayOf(row.date), lessThan(6));
+      // Сколько колонок пар у дня — столько и пар в дне: сверка сходится
+      // с самим журналом, а не с глобальным порядком приложения.
+      expect(row.pairCount, row.columnCount);
+    }
+    // Первый рабочий день ноября 2026 — понедельник 2-е: 3 пары.
+    final first = report.rows.first;
+    expect(first.date.day, 2);
+    expect(first.pairCount, 3);
   });
 }

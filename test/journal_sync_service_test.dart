@@ -950,4 +950,97 @@ void main() {
     // Другие цвета палитры Google «пришедшим» не считаются.
     expect(JournalCellCodec.statusFromColor(0x00FFFF), isNull);
   });
+
+  group('пустое расписание', () {
+    // Журнал тот же: у понедельника 9 ноября — 3 колонки пар.
+    test('отметка на весь день ложится на все колонки пар дня', () async {
+      final api = FakeSheetsApi();
+      seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+        alexey,
+        maria,
+      ]);
+      final service = JournalSyncService(api);
+      final schedule = ScheduleController.inMemory();
+
+      final result = await service.push(
+        spreadsheetId: 'sid',
+        mapping: mapping,
+        sessions: [
+          session({
+            '1': AttendanceEntry(
+              status: AttendanceStatus.came,
+              markedAt: DateTime(2026, 11, 9, 9),
+            ),
+          }),
+        ],
+        schedule: schedule,
+      );
+
+      // Без расписания «весь день» — это все колонки пар дня журнала,
+      // а не глобальный порядок приложения.
+      for (var offset = 0; offset < 3; offset++) {
+        expect(
+          api.cell(tabTitle, 3, blockStart(9) + offset).backgroundColor,
+          0x00FF00,
+          reason: 'колонка $offset',
+        );
+      }
+      expect(result.updatedCells, 3);
+      expect(result.skippedDays, isEmpty);
+    });
+
+    test('отметка пары temp-pair-N попадает в свою колонку', () async {
+      final api = FakeSheetsApi();
+      seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+        alexey,
+        maria,
+      ]);
+      final service = JournalSyncService(api);
+
+      await service.push(
+        spreadsheetId: 'sid',
+        mapping: mapping,
+        sessions: [
+          session({
+            '1': AttendanceEntry(
+              status: AttendanceStatus.late,
+              markedAt: DateTime(2026, 11, 9, 10, 20),
+              lessonKey: 'temp-pair-2',
+              lessonTitle: 'Пара 2',
+            ),
+          }),
+        ],
+        schedule: ScheduleController.inMemory(),
+      );
+
+      // Вторая колонка блока понедельника — пара 2: там время опоздания.
+      final lateCell = api.cell(tabTitle, 3, blockStart(9) + 1);
+      expect(lateCell.backgroundColor, 0xFF9900);
+      expect(lateCell.value, '10:20');
+      // Остальные колонки дня не тронуты: отметка только у пары 2.
+      expect(api.cell(tabTitle, 3, blockStart(9)).backgroundColor, isNull);
+      expect(api.cell(tabTitle, 3, blockStart(9) + 2).backgroundColor, isNull);
+    });
+
+    test('snapshot подстраивает порядок пар под колонки дня', () async {
+      final api = FakeSheetsApi();
+      seedJournal(api, month: month, pairsByDay: pairsByDay, students: const [
+        alexey,
+        maria,
+      ]);
+      final service = JournalSyncService(api);
+      final schedule = ScheduleController.inMemory()
+        ..temporaryPairCount = 8;
+
+      await service.snapshot(
+        spreadsheetId: 'sid',
+        mapping: mapping,
+        schedule: schedule,
+      );
+
+      // Самое частое число колонок пар дня здесь — 8 раз «1» и 8 раз
+      // «2», «3» — 5 раз. Ничья между 1 и 2: берётся меньшее.
+      expect(schedule.temporaryPairCount, 1);
+    });
+  });
 }
