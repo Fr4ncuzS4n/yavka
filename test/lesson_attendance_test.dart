@@ -480,4 +480,123 @@ void main() {
     expect(attendance.entries.length, 3); // три ячейки
     expect(attendance.session.markedCountForDay, 2); // два студента
   });
+
+  test('весь день: все пары заполнены одним статусом — дневная отметка '
+      'ставится', () {
+    // Физика идёт дважды, История один раз. Алексей на всех парах
+    // «Пришёл» — во вкладке «Весь день» он отмечён на весь день, хотя
+    // отдельной дневной отметки у него нет.
+    const fizika1 = ScheduleLesson(
+      id: 'lesson-fizika-1',
+      weekday: 1,
+      startMinutes: 9 * 60,
+      subject: 'Физика',
+    );
+    const fizika2 = ScheduleLesson(
+      id: 'lesson-fizika-2',
+      weekday: 1,
+      startMinutes: 10 * 60 + 40,
+      subject: 'Физика',
+    );
+    const history = ScheduleLesson(
+      id: 'lesson-history',
+      weekday: 1,
+      startMinutes: 11 * 60 + 50,
+      subject: 'История',
+    );
+    final now = DateTime(2026, 11, 9, 9);
+    final attendance = controller();
+    final alexey = students[0];
+
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: fizika1.id, lessonTitle: fizika1.subject);
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: fizika2.id, lessonTitle: fizika2.subject);
+
+    // Не все пары заполнены — дневной отметки ещё нет.
+    expect(
+      attendance.session.wholeDayEntryFor(alexey.id, [
+        fizika1,
+        fizika2,
+        history,
+      ]),
+      isNull,
+    );
+
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+    final wholeDay = attendance.session.wholeDayEntryFor(alexey.id, [
+      fizika1,
+      fizika2,
+      history,
+    ]);
+    expect(wholeDay?.status, AttendanceStatus.came);
+    expect(attendance.entryFor(alexey.id), isNull); // записи не создано
+  });
+
+  test('весь день: разные статусы пар и «Опоздал» не сводятся в дневную '
+      'отметку', () {
+    const fizika = ScheduleLesson(
+      id: 'lesson-fizika-1',
+      weekday: 1,
+      startMinutes: 9 * 60,
+      subject: 'Физика',
+    );
+    const history = ScheduleLesson(
+      id: 'lesson-history',
+      weekday: 1,
+      startMinutes: 10 * 60 + 40,
+      subject: 'История',
+    );
+    final now = DateTime(2026, 11, 9, 9);
+    final attendance = controller();
+    final alexey = students[0];
+    final maria = students[1];
+    final lessons = [fizika, history];
+
+    // Пришёл на одну, по уважительной на другую — единого статуса нет.
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: fizika.id, lessonTitle: fizika.subject);
+    attendance.mark(alexey, AttendanceStatus.excused, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+    expect(attendance.session.wholeDayEntryFor(alexey.id, lessons), isNull);
+
+    // «Опоздал» ко всему дню не сводится: у опоздания время пары.
+    attendance.mark(maria, AttendanceStatus.late, now,
+        lessonKey: fizika.id, lessonTitle: fizika.subject);
+    attendance.mark(maria, AttendanceStatus.late, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+    expect(attendance.session.wholeDayEntryFor(maria.id, lessons), isNull);
+  });
+
+  test('весь день: своя дневная отметка важнее отметок пар', () {
+    const fizika = ScheduleLesson(
+      id: 'lesson-fizika-1',
+      weekday: 1,
+      startMinutes: 9 * 60,
+      subject: 'Физика',
+    );
+    const history = ScheduleLesson(
+      id: 'lesson-history',
+      weekday: 1,
+      startMinutes: 10 * 60 + 40,
+      subject: 'История',
+    );
+    final now = DateTime(2026, 11, 9, 9);
+    final attendance = controller();
+    final alexey = students[0];
+
+    attendance.mark(alexey, AttendanceStatus.absent, now); // весь день
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: fizika.id, lessonTitle: fizika.subject);
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+
+    final wholeDay = attendance.session.wholeDayEntryFor(alexey.id, [
+      fizika,
+      history,
+    ]);
+    expect(wholeDay?.status, AttendanceStatus.absent);
+    expect(wholeDay, same(attendance.entryFor(alexey.id)));
+  });
 }

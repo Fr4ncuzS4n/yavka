@@ -1,4 +1,6 @@
 import 'attendance_entry.dart';
+import 'attendance_status.dart';
+import 'schedule_lesson.dart';
 import 'student.dart';
 
 /// Дата без времени — используется как ключ дня посещаемости.
@@ -130,6 +132,43 @@ class AttendanceSession {
       if (entry.lessonTitle == title) return entry;
     }
     return null;
+  }
+
+  /// Отметка студента для вкладки «Весь день».
+  ///
+  /// Это собственная дневная отметка студента. Если её нет, но все пары
+  /// дня у студента отмечены одним статусом — «Пришёл», «По уважительной»
+  /// или «Не пришёл» — дневной считается эта отметка: все ячейки дня
+  /// заполнены, и студент не должен выглядеть неотмеченным (иначе
+  /// поочерёдная отметка снова его подсвечивает).
+  ///
+  /// Сходимости нет, если хоть одна пара не отмечена, статусы пар
+  /// расходятся или среди отметок есть «Опоздал»: у опоздания время
+  /// конкретной пары, ко всему дню оно не сводится.
+  AttendanceEntry? wholeDayEntryFor(
+    String studentId,
+    List<ScheduleLesson> lessons,
+  ) {
+    final own = entries[studentId];
+    if (own != null) return own;
+    if (lessons.isEmpty) return null;
+
+    AttendanceEntry? common;
+    for (final lesson in lessons) {
+      final entry = entryInLesson(
+        studentId,
+        lessonKey: lesson.id,
+        lessonTitle: lesson.subject,
+      );
+      if (entry == null) return null;
+      if (entry.status == AttendanceStatus.late) return null;
+      if (common == null) {
+        common = entry;
+      } else if (common.status != entry.status) {
+        return null;
+      }
+    }
+    return common;
   }
 
   /// Сколько студентов отмечено на паре.

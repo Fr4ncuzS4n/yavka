@@ -475,9 +475,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   /// Отметка студента с учётом режима: на паре или на весь день.
+  ///
+  /// Во вкладке «Весь день», если все пары дня у студента заполнены одним
+  /// статусом («Пришёл», «По уважительной», «Не пришёл»), дневной
+  /// считается эта отметка — см. [AttendanceSession.wholeDayEntryFor].
   AttendanceEntry? _entryFor(Student student) {
     final lesson = _selectedLesson;
-    if (lesson == null) return _attendance.entryFor(student.id);
+    if (lesson == null) {
+      return _attendance.session.wholeDayEntryFor(student.id, _dayLessons);
+    }
     return _attendance.entryInLesson(
       student.id,
       lessonKey: lesson.id,
