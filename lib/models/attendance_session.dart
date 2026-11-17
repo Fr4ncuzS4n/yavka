@@ -98,21 +98,36 @@ class AttendanceSession {
   /// Отметка студента на конкретной паре.
   ///
   /// Сначала ищем по идентификатору пары (локальные отметки), затем —
-  /// по названию (отметки, загруженные из таблицы).
+  /// по названию (отметки, загруженные из таблицы без id пары).
+  ///
+  /// Совпадение по названию считается отметкой этой пары, только если
+  /// у записи нет своего идентификатора пары: в дне бывает два одинаковых
+  /// предмета, и отметка одной из них не должна выдаваться за отметку
+  /// другой (иначе студент показывается отмеченным на обеих парах и
+  /// поочерёдная отметка его пропускает).
   AttendanceEntry? entryInLesson(
     String studentId, {
     String? lessonKey,
     String? lessonTitle,
   }) {
-    if (lessonKey != null && lessonKey.trim().isNotEmpty) {
-      final direct = entries[entryKey(studentId: studentId, lessonKey: lessonKey)];
+    final key = lessonKey?.trim();
+    if (key != null && key.isNotEmpty) {
+      final direct = entries[entryKey(studentId: studentId, lessonKey: key)];
       if (direct != null) return direct;
     }
     final title = lessonTitle?.trim();
     if (title == null || title.isEmpty) return null;
     for (final item in entries.entries) {
       if (!item.key.startsWith('$studentId|')) continue;
-      if (item.value.lessonTitle == title) return item.value;
+      final entry = item.value;
+      final entryKey = entry.lessonKey?.trim() ?? '';
+      if (key != null &&
+          key.isNotEmpty &&
+          entryKey.isNotEmpty &&
+          entryKey != key) {
+        continue;
+      }
+      if (entry.lessonTitle == title) return entry;
     }
     return null;
   }

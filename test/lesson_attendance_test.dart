@@ -90,6 +90,68 @@ void main() {
     );
   });
 
+  test('одинаковый предмет дважды в день: отметка одной пары не видна '
+      'на другой', () {
+    // Физика стоит в расписании два раза: отметка на первой паре не
+    // должна показываться на второй — иначе студент выглядит отмеченным
+    // на обеих и поочерёдная отметка его пропускает.
+    const fizikaFirst = ScheduleLesson(
+      id: 'lesson-fizika-1',
+      weekday: 1,
+      startMinutes: 9 * 60,
+      subject: 'Физика',
+    );
+    const fizikaSecond = ScheduleLesson(
+      id: 'lesson-fizika-2',
+      weekday: 1,
+      startMinutes: 10 * 60 + 40,
+      subject: 'Физика',
+    );
+    final attendance = controller();
+    final now = DateTime.now();
+    final alexey = students[0];
+
+    attendance.mark(alexey, AttendanceStatus.came, now,
+        lessonKey: fizikaFirst.id, lessonTitle: fizikaFirst.subject);
+
+    expect(
+      attendance.entryInLesson(alexey.id,
+          lessonKey: fizikaFirst.id, lessonTitle: fizikaFirst.subject),
+      isNotNull,
+    );
+    expect(
+      attendance.entryInLesson(alexey.id,
+          lessonKey: fizikaSecond.id, lessonTitle: fizikaSecond.subject),
+      isNull,
+    );
+  });
+
+  test('табличная отметка без id пары видна на паре с тем же названием', () {
+    // Отметки из журнала бывают только с названием пары — они остаются
+    // видны на паре с этим названием.
+    final session = AttendanceSession(
+      groupName: 'БИТ-24-03',
+      date: DateTime(2026, 11, 9),
+      students: students,
+      entries: {
+        '1|Физика': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 9),
+          lessonTitle: 'Физика',
+        ),
+      },
+    );
+
+    expect(
+      session.entryInLesson(
+        '1',
+        lessonKey: 'lesson-fizika-2',
+        lessonTitle: 'Физика',
+      )?.status,
+      AttendanceStatus.came,
+    );
+  });
+
   test('повторная отметка на той же паре заменяет предыдущую', () {
     final attendance = controller();
     final now = DateTime.now();
