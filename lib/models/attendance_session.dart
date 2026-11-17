@@ -118,16 +118,23 @@ class AttendanceSession {
   }
 
   /// Сколько студентов отмечено на паре.
-  int markedCountInLesson({String? lessonKey, String? lessonTitle}) =>
-      entries.values.where((entry) {
-        if (lessonKey != null && entry.lessonKey == lessonKey) return true;
-        final title = lessonTitle?.trim();
-        return entry.lessonKey == null &&
-            lessonKey != null &&
-            title != null &&
-            title.isNotEmpty &&
-            entry.lessonTitle == title;
-      }).length;
+  ///
+  /// Считаются разные студенты, а не записи: у одного студента может
+  /// оказаться две записи на одну пару — локальная с id пары и пришедшая
+  /// из таблицы только с её названием. Такой студент — одна отметка.
+  int markedCountInLesson({String? lessonKey, String? lessonTitle}) {
+    final title = lessonTitle?.trim();
+    return {
+      for (final item in entries.entries)
+        if ((lessonKey != null && item.value.lessonKey == lessonKey) ||
+            (lessonKey != null &&
+                title != null &&
+                title.isNotEmpty &&
+                item.value.lessonKey == null &&
+                item.value.lessonTitle == title))
+          item.key.split('|').first.trim(),
+    }.length;
+  }
 
   /// Сколько разных студентов отмечено за день — на весь день или
   /// хотя бы на одной паре. Ячейки не суммируются: студент, отмеченный

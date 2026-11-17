@@ -326,61 +326,66 @@ class _PasteDialogState extends State<_PasteDialog> {
       title: const Text('Вставить документ'),
       content: SizedBox(
         width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Вставьте текст расписания. Строки вида '
-              '«09:00–10:30 Математика, каб. 201» станут парами. '
-              'Если в документе есть заголовки дней («Понедельник»), '
-              'пары распределятся по ним.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              maxLines: 8,
-              autofocus: true,
-              // Без этого кнопка «Вставить» не узнает, что текст введён.
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                hintText:
-                    'Понедельник\n09:00–10:30 Математика, каб. 201\n'
-                    '10:40 Физика, ауд. 12, Иванова И.И.',
-                border: OutlineInputBorder(),
+        // Прокрутка: на узком окне или под клавиатурой контент не
+        // помещается по высоте — без неё нижний текст («Заменить пары
+        // этих дней») вылезает за границы окна.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Вставьте текст расписания. Строки вида '
+                '«09:00–10:30 Математика, каб. 201» станут парами. '
+                'Если в документе есть заголовки дней («Понедельник»), '
+                'пары распределятся по ним.',
+                style: TextStyle(fontSize: 13),
               ),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              initialValue: _weekday,
-              decoration: const InputDecoration(
-                labelText: 'Если день в строке не указан — добавить в',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _controller,
+                maxLines: 8,
+                autofocus: true,
+                // Без этого кнопка «Вставить» не узнает, что текст введён.
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText:
+                      'Понедельник\n09:00–10:30 Математика, каб. 201\n'
+                      '10:40 Физика, ауд. 12, Иванова И.И.',
+                  border: OutlineInputBorder(),
+                ),
               ),
-              items: [
-                // Воскресенье не предлагаем, но показываем, если пара
-                // уже лежит в этот день (старые записи расписания).
-                for (var day = 1; day <= 7; day++)
-                  if (day != DateTime.sunday || _weekday == DateTime.sunday)
-                    DropdownMenuItem(
-                      value: day,
-                      child: Text(weekdayFullName(day)),
-                    ),
-              ],
-              onChanged: (value) =>
-                  setState(() => _weekday = value ?? _weekday),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Заменить пары этих дней'),
-              subtitle: const Text(
-                'Существующие пары затронутых дней будут удалены.',
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                initialValue: _weekday,
+                decoration: const InputDecoration(
+                  labelText: 'Если день в строке не указан — добавить в',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  // Воскресенье не предлагаем, но показываем, если пара
+                  // уже лежит в этот день (старые записи расписания).
+                  for (var day = 1; day <= 7; day++)
+                    if (day != DateTime.sunday || _weekday == DateTime.sunday)
+                      DropdownMenuItem(
+                        value: day,
+                        child: Text(weekdayFullName(day)),
+                      ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _weekday = value ?? _weekday),
               ),
-              value: _replace,
-              onChanged: (value) => setState(() => _replace = value),
-            ),
-          ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Заменить пары этих дней'),
+                subtitle: const Text(
+                  'Существующие пары затронутых дней будут удалены.',
+                ),
+                value: _replace,
+                onChanged: (value) => setState(() => _replace = value),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [

@@ -130,6 +130,44 @@ void main() {
     );
   });
 
+  test('счётчик пары считает студента один раз: локальная и табличная '
+      'отметки одной пары', () {
+    // Локальная отметка несёт id пары, табличная — только её название.
+    // Записей на студента две, студент отмечен один.
+    final session = AttendanceSession(
+      groupName: 'БИТ-24-03',
+      date: DateTime(2026, 11, 9),
+      students: students,
+      entries: {
+        '1|lesson-math': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 9),
+          lessonKey: 'lesson-math',
+          lessonTitle: 'Математика',
+        ),
+        '1|Математика': AttendanceEntry(
+          status: AttendanceStatus.came,
+          markedAt: DateTime(2026, 11, 9, 9),
+          lessonTitle: 'Математика',
+        ),
+        '2|lesson-math': AttendanceEntry(
+          status: AttendanceStatus.late,
+          markedAt: DateTime(2026, 11, 9, 9),
+          lessonKey: 'lesson-math',
+          lessonTitle: 'Математика',
+        ),
+      },
+    );
+
+    expect(
+      session.markedCountInLesson(
+        lessonKey: 'lesson-math',
+        lessonTitle: 'Математика',
+      ),
+      2, // два студента, а не три записи
+    );
+  });
+
   test('отметки на парах переживают сохранение и загрузку', () async {
     final store = MemoryAttendanceStore();
     final attendance = controller(store: store);
