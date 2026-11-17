@@ -137,14 +137,13 @@ class AttendanceSession {
   /// Отметка студента для вкладки «Весь день».
   ///
   /// Это собственная дневная отметка студента. Если её нет, но все пары
-  /// дня у студента отмечены одним статусом — «Пришёл», «По уважительной»
-  /// или «Не пришёл» — дневной считается эта отметка: все ячейки дня
-  /// заполнены, и студент не должен выглядеть неотмеченным (иначе
-  /// поочерёдная отметка снова его подсвечивает).
+  /// дня у студента отмечены, дневная отметка выводится из них:
+  /// «Опоздал» считается «Пришёл» (человек был на паре, просто позже —
+  /// время опоздания остаётся в отметках пар), «Пришёл» — «Пришёл»,
+  /// «По уважительной» — «По уважительной», «Не пришёл» — «Непришёл».
   ///
-  /// Сходимости нет, если хоть одна пара не отмечена, статусы пар
-  /// расходятся или среди отметок есть «Опоздал»: у опоздания время
-  /// конкретной пары, ко всему дню оно не сводится.
+  /// Единой дневной отметки нет, если хоть одна пара не отмечена или
+  /// статусы пар из разных групп (например, «Пришёл» и «Не пришёл»).
   AttendanceEntry? wholeDayEntryFor(
     String studentId,
     List<ScheduleLesson> lessons,
@@ -153,7 +152,8 @@ class AttendanceSession {
     if (own != null) return own;
     if (lessons.isEmpty) return null;
 
-    AttendanceEntry? common;
+    AttendanceStatus? common;
+    DateTime markedAt = dateOnly(DateTime.now());
     for (final lesson in lessons) {
       final entry = entryInLesson(
         studentId,
@@ -161,14 +161,19 @@ class AttendanceSession {
         lessonTitle: lesson.subject,
       );
       if (entry == null) return null;
-      if (entry.status == AttendanceStatus.late) return null;
+      final status = entry.status == AttendanceStatus.late
+          ? AttendanceStatus.came
+          : entry.status;
       if (common == null) {
-        common = entry;
-      } else if (common.status != entry.status) {
+        common = status;
+        markedAt = entry.markedAt;
+      } else if (common != status) {
         return null;
       }
     }
-    return common;
+    // Дневная отметка без привязки к паре: время важно только у
+    // «Опоздал», а оно видно во вкладках пар.
+    return AttendanceEntry(status: common!, markedAt: markedAt);
   }
 
   /// Сколько студентов отмечено на паре.

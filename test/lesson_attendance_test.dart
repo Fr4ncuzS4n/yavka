@@ -534,8 +534,7 @@ void main() {
     expect(attendance.entryFor(alexey.id), isNull); // записи не создано
   });
 
-  test('весь день: разные статусы пар и «Опоздал» не сводятся в дневную '
-      'отметку', () {
+  test('весь день: разные статусы пар из разных групп не сводятся', () {
     const fizika = ScheduleLesson(
       id: 'lesson-fizika-1',
       weekday: 1,
@@ -561,12 +560,57 @@ void main() {
         lessonKey: history.id, lessonTitle: history.subject);
     expect(attendance.session.wholeDayEntryFor(alexey.id, lessons), isNull);
 
-    // «Опоздал» ко всему дню не сводится: у опоздания время пары.
-    attendance.mark(maria, AttendanceStatus.late, now,
+    // Пришёл на одну, не пришёл на другую — тоже.
+    attendance.mark(maria, AttendanceStatus.came, now,
         lessonKey: fizika.id, lessonTitle: fizika.subject);
-    attendance.mark(maria, AttendanceStatus.late, now,
+    attendance.mark(maria, AttendanceStatus.absent, now,
         lessonKey: history.id, lessonTitle: history.subject);
     expect(attendance.session.wholeDayEntryFor(maria.id, lessons), isNull);
+  });
+
+  test('весь день: «Опоздал» на всех парах считается «Пришёл»', () {
+    // Опоздал на все пары — человек был весь день, дневная отметка
+    // «Пришёл». Время опозданий остаётся во вкладках пар.
+    const fizika = ScheduleLesson(
+      id: 'lesson-fizika-1',
+      weekday: 1,
+      startMinutes: 9 * 60,
+      subject: 'Физика',
+    );
+    const history = ScheduleLesson(
+      id: 'lesson-history',
+      weekday: 1,
+      startMinutes: 10 * 60 + 40,
+      subject: 'История',
+    );
+    final now = DateTime(2026, 11, 9, 9, 10);
+    final attendance = controller();
+    final alexey = students[0];
+    final maria = students[1];
+    final lessons = [fizika, history];
+
+    attendance.mark(alexey, AttendanceStatus.late, now,
+        lessonKey: fizika.id, lessonTitle: fizika.subject);
+    attendance.mark(alexey, AttendanceStatus.late, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+
+    // Смешанно «Опоздал» и «Пришёл» — тоже «Пришёл» на весь день.
+    attendance.mark(maria, AttendanceStatus.late, now,
+        lessonKey: fizika.id, lessonTitle: fizika.subject);
+    attendance.mark(maria, AttendanceStatus.came, now,
+        lessonKey: history.id, lessonTitle: history.subject);
+
+    final wholeDay = attendance.session.wholeDayEntryFor(alexey.id, lessons);
+    expect(wholeDay?.status, AttendanceStatus.came);
+    expect(wholeDay?.hasLesson, isFalse);
+    expect(attendance.session.wholeDayEntryFor(maria.id, lessons)?.status,
+        AttendanceStatus.came);
+    // Сами отметки пар не тронуты: опоздание с временем на месте.
+    expect(
+      attendance.entryInLesson(alexey.id,
+              lessonKey: fizika.id, lessonTitle: fizika.subject)?.status,
+      AttendanceStatus.late,
+    );
   });
 
   test('весь день: своя дневная отметка важнее отметок пар', () {
