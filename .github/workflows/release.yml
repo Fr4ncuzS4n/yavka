@@ -8,7 +8,6 @@ name: Release build
 #   yavka-linux-x64.tar.gz       — архив для Linux
 #   yavka-linux-x64.deb          — пакет deb
 #   yavka-linux-x64.rpm          — пакет rpm (универсальный)
-#   yavka-linux-x64-alt.rpm      — пакет rpm для ALT Linux
 #   yavka-linux-x64.AppImage     — AppImage (файл автообновления)
 #   yavka-windows-x64.zip        — архив для Windows
 #   yavka-windows-x64-setup.exe  — инсталлятор (файл автообновления)
@@ -310,81 +309,6 @@ jobs:
           rpmbuild -bb --define "_topdir $PWD/.rpmbuild" "$GITHUB_WORKSPACE/yavka.spec"
           cp .rpmbuild/RPMS/x86_64/yavka-*.rpm "$GITHUB_WORKSPACE/yavka-linux-x64.rpm"
 
-      # RPM для ALT Linux: собирается «родным» rpm ALT в официальном
-      # контейнере registry.altlinux.org/alt/alt (стабильная ветка p11).
-      # Отличия от универсального пакета: релиз-тег alt1, зависимости
-      # в именах пакетов ALT, сборка от непривилегированного пользователя.
-      - name: Пакет rpm для ALT Linux
-        run: |
-          cat > "$GITHUB_WORKSPACE/yavka-alt.spec" <<EOF
-          Name:           yavka
-          Version:        $BASE_VERSION
-          Release:        alt1
-          Summary:        Явка — учёт посещаемости
-          License:        GPL-3.0-only
-          Group:          Office
-          BuildArch:      x86_64
-          BuildRoot:      %{_topdir}/BUILDROOT/%{name}-%{version}
-          Packager:       Fr4ncuzS4n <Fr4ncuzS4n@users.noreply.github.com>
-          Requires:       libgtk+3 libdbus
-
-          # Flutter-плагины идут с RPATH, вшитым путём сборочной машины
-          # (linux/flutter/ephemeral), и «нестандартными» ELF-заголовками —
-          # проверка verify-elf ALT отвергает их и валит сборку.
-          # Это готовый бандл приложения, а не библиотеки дистрибутива,
-          # поэтому проверка ELF здесь отключается.
-          %set_verify_elf_method skip
-
-          %description
-          Приложение «Явка» для учёта посещаемости группы.
-
-          %install
-          mkdir -p %{buildroot}/opt/yavka %{buildroot}%{_bindir} \\
-            %{buildroot}%{_datadir}/applications \\
-            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps \\
-            %{buildroot}%{_docdir}/yavka
-          cp -r /work/build/linux/x64/release/bundle/. %{buildroot}/opt/yavka/
-          ln -s /opt/yavka/yavka %{buildroot}%{_bindir}/yavka
-          cp /work/yavka.desktop %{buildroot}%{_datadir}/applications/
-          cp /work/web/icons/Icon-512.png \\
-            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/yavka.png
-          cp /work/LICENSE %{buildroot}%{_docdir}/yavka/LICENSE
-
-          %files
-          /opt/yavka
-          %{_bindir}/yavka
-          %{_datadir}/applications/yavka.desktop
-          %{_datadir}/icons/hicolor/512x512/apps/yavka.png
-          %{_docdir}/yavka/LICENSE
-          EOF
-          cat > "$GITHUB_WORKSPACE/build-alt-rpm.sh" <<'EOF'
-          #!/bin/bash
-          set -e
-          apt-get update -q
-          apt-get install -y rpm-build
-          # Политика ALT запрещает сборку под root, а su в минимальном
-          # образе нет — запускаем rpmbuild от пользователя builder
-          # через chroot --userspec (coreutils есть в любом образе).
-          useradd -m builder
-          mkdir -p /tmp/rpmbuild/BUILD /tmp/rpmbuild/RPMS /tmp/rpmbuild/SPECS
-          cp /work/yavka-alt.spec /tmp/rpmbuild/SPECS/
-          chown -R builder:builder /tmp/rpmbuild
-          chroot --userspec=builder:builder / /bin/bash -c \
-            'rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
-            /tmp/rpmbuild/SPECS/yavka-alt.spec'
-          # Дерево RPMS содержит ещё и пакет yavka-debuginfo — берём
-          # только основной пакет (yavka-<версия>…), иначе cp из двух
-          # файлов в один путь падает.
-          cp /tmp/rpmbuild/RPMS/x86_64/yavka-[0-9]*.rpm \
-            /work/yavka-linux-x64-alt.rpm
-          EOF
-          chmod +x "$GITHUB_WORKSPACE/build-alt-rpm.sh"
-          docker run --rm \
-            --entrypoint /bin/bash \
-            -v "$GITHUB_WORKSPACE:/work" \
-            registry.altlinux.org/alt/alt:p11 \
-            /work/build-alt-rpm.sh
-
       # AppImage: AppRun подкладывает lib/ бандла в LD_LIBRARY_PATH,
       # остальное — стандартный AppDir. Инструмент запускается через
       # --appimage-extract-and-run: на runner нет FUSE.
@@ -423,7 +347,6 @@ jobs:
             yavka-linux-x64.tar.gz \
             yavka-linux-x64.deb \
             yavka-linux-x64.rpm \
-            yavka-linux-x64-alt.rpm \
             yavka-linux-x64.AppImage \
             --clobber --repo '${{ github.repository }}'
 
