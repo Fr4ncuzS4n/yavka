@@ -328,6 +328,13 @@ jobs:
           Packager:       Fr4ncuzS4n <Fr4ncuzS4n@users.noreply.github.com>
           Requires:       libgtk+3 libdbus
 
+          # Flutter-плагины идут с RPATH, вшитым путём сборочной машины
+          # (linux/flutter/ephemeral), и «нестандартными» ELF-заголовками —
+          # проверка verify-elf ALT отвергает их и валит сборку.
+          # Это готовый бандл приложения, а не библиотеки дистрибутива,
+          # поэтому проверка ELF здесь отключается.
+          %set_verify_elf_method skip
+
           %description
           Приложение «Явка» для учёта посещаемости группы.
 
@@ -365,7 +372,10 @@ jobs:
           chroot --userspec=builder:builder / /bin/bash -c \
             'rpmbuild -bb --define "_topdir /tmp/rpmbuild" \
             /tmp/rpmbuild/SPECS/yavka-alt.spec'
-          cp /tmp/rpmbuild/RPMS/x86_64/yavka-*.rpm \
+          # Дерево RPMS содержит ещё и пакет yavka-debuginfo — берём
+          # только основной пакет (yavka-<версия>…), иначе cp из двух
+          # файлов в один путь падает.
+          cp /tmp/rpmbuild/RPMS/x86_64/yavka-[0-9]*.rpm \
             /work/yavka-linux-x64-alt.rpm
           EOF
           chmod +x "$GITHUB_WORKSPACE/build-alt-rpm.sh"
