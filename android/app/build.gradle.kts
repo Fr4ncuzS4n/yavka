@@ -1,7 +1,8 @@
 import java.io.FileInputStream
 import java.util.Properties
 
-// Ключ подписи релизных сборок: android/key.properties + app/yavka-release.jks.
+// Ключ подписи релизных сборок: android/key.properties + android/app/yavka-release.jks.
+// storeFile в key.properties — путь относительно модуля android/app.
 // Подпись должна быть одной и той же во всех сборках — Android не ставит
 // APK поверх установленного приложения, если подпись другая (обновление
 // «бесконечно» не устанавливается). Без key.properties — debug-ключ,
