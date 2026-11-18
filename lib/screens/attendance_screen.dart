@@ -311,20 +311,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   /// Чипы выбора: «Весь день» и пары дня.
   List<Widget> _lessonChips() => [
     ChoiceChip(
+      key: const Key('whole-day-chip'),
       label: const Text('Весь день'),
       selected: _lessonId == null,
       onSelected: (_) => _selectLesson(null),
     ),
     for (final lesson in _dayLessons)
       ChoiceChip(
+        key: ValueKey('lesson-chip-${lesson.id}'),
         label: Text('${lesson.startLabel} · ${lesson.subject}'),
         selected: _lessonId == lesson.id,
         onSelected: (_) => _selectLesson(lesson.id),
       ),
   ];
 
-  /// На Android пары идут одной строкой (Row со скроллом), на других
-  /// платформах — переносятся в несколько строк (Wrap).
+  /// На Android пары идут одной строкой (Row со скроллом), на web —
+  /// переноской в несколько строк (Wrap). На десктопе чипы стоят в колонку
+  /// по одному: левая панель узкая, Wrap рвал названия пар на несколько строк.
   bool get _useRowForLessons {
     if (kIsWeb || isDesktopLayout()) return false;
     return defaultTargetPlatform == TargetPlatform.android;
@@ -626,9 +629,21 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
               if (_dayLessons.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                // На Android пары идут одной строкой со скроллом; на
-                // остальных платформах — переноской в несколько строк.
-                if (_useRowForLessons)
+                // На десктопе — по одной кнопке на строку: в узкой левой
+                // панели названия пар не должны переноситься и слипаться.
+                // На Android — строка со скроллом, на web — Wrap.
+                if (isDesktopLayout())
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final chip in _lessonChips())
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: chip,
+                        ),
+                    ],
+                  )
+                else if (_useRowForLessons)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(spacing: 8, children: _lessonChips()),
