@@ -35,8 +35,9 @@ const kMarkingPanelKey = Key('marking-panel');
 ///
 /// Староста (или куратор) выбирает студента в списке и отмечает его
 /// одной из 4 кнопок: «Пришёл», «Непришёл», «Опоздал», «По уважительной».
-/// «Непришёл» подтверждается вторым нажатием. Время пишется только у
-/// «Опоздал» — оно уходит в журнал; у «Пришёл» и «Непришёл» времени нет.
+/// «Непришёл» подтверждается вторым нажатием. «Опоздал» ставится тоже
+/// в два клика: первый — пустой «опоздал» без времени, второй — ставит
+/// время (оно уходит в журнал). У «Пришёл» и «Непришёл» времени нет.
 ///
 /// Над списком выбираются день и пара: отметки пишутся за выбранный день
 /// (по умолчанию — сегодня, задним числом тоже можно) и, если выбрана
@@ -399,18 +400,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _setDay(picked);
   }
 
-  void _mark(AttendanceStatus status) {
+  void _mark(AttendanceStatus status, {bool withTime = true}) {
     final targets = _targets;
     if (targets.isEmpty) return;
     // Дата отметки — выбранный день, время — момент отметки.
+    // У «пустого опоздал» времени нет: ставится повторным кликом.
     final now = DateTime.now();
-    final markedAt = DateTime(
-      _day.year,
-      _day.month,
-      _day.day,
-      now.hour,
-      now.minute,
-    );
+    final markedAt = withTime
+        ? DateTime(_day.year, _day.month, _day.day, now.hour, now.minute)
+        : DateTime(_day.year, _day.month, _day.day);
     final lesson = _selectedLesson;
     for (final student in targets) {
       _attendance.mark(
@@ -444,6 +442,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     // Времени у «не пришёл» нет: в журнал идёт только красная ячейка
     // с буквой «Н». Важен сам факт отсутствия.
     _mark(AttendanceStatus.absent);
+  }
+
+  /// «Опоздал» ставится в два клика.
+  ///
+  /// Первый клик по студенту без опоздания — пустой «опоздал» без
+  /// времени. Повторный клик (когда у всех выбранных уже пустой
+  /// «опоздал») ставит время отметки. Если опоздание с временем уже
+  /// стоит — время обновляется на текущее, отметка не теряется.
+  void _markLate() {
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    final allLate = targets.every((student) {
+      final entry = _entryFor(student);
+      return entry != null && entry.status == AttendanceStatus.late;
+    });
+    _mark(AttendanceStatus.late, withTime: allLate);
   }
 
   /// Отмена отметки у всех выбранных студентов.
@@ -728,6 +742,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     armed: status == AttendanceStatus.absent && _absentArmed,
                     onTap: status == AttendanceStatus.absent
                         ? _markAbsent
+                        : status == AttendanceStatus.late
+                        ? _markLate
                         : () => _mark(status),
                   ),
                 ],
@@ -1004,7 +1020,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     child: _StatusButton(
                       status: AttendanceStatus.late,
                       enabled: canMark,
-                      onTap: () => _mark(AttendanceStatus.late),
+                      onTap: _markLate,
                     ),
                   ),
                   const SizedBox(width: _kGap),
@@ -1127,6 +1143,11 @@ class _StudentRow extends StatelessWidget {
     // «не пришёл» и «по уважительной» времени нет.
     if (entry!.status != AttendanceStatus.late) {
       return multiSelect ? entry!.status.label : null;
+    }
+    // Пустой «опоздал»: время ещё не поставлено, повторный клик
+    // по кнопке «Опоздал» его добавит.
+    if (!entry!.hasTime) {
+      return multiSelect ? '${entry!.status.label} · без времени' : 'без времени';
     }
     final time = _formatTime(TimeOfDay.fromDateTime(entry!.markedAt));
     if (multiSelect) return '${entry!.status.label} · $time';

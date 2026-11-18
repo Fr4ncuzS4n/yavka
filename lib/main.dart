@@ -114,7 +114,7 @@ Future<void> main() async {
   }
 }
 
-class AppRoot extends StatelessWidget {
+class AppRoot extends StatefulWidget {
   const AppRoot({
     super.key,
     this.attendance,
@@ -139,7 +139,42 @@ class AppRoot extends StatelessWidget {
   final UpdateController? updates;
 
   @override
+  State<AppRoot> createState() => _AppRootState();
+}
+
+class _AppRootState extends State<AppRoot> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // Возврат из внешнего приложения (браузер при входе в Google): на
+    // части Android-устройств движок пропускает первый кадр после
+    // пересоздания поверхности, и экран остаётся чёрным до перезапуска.
+    // Просим кадр несколько раз с паузами — хотя бы один пройдёт уже
+    // после того, как поверхность снова готова.
+    final binding = WidgetsBinding.instance;
+    binding.scheduleForcedFrame();
+    for (final delay in const [100, 300, 1000, 3000]) {
+      Future<void>.delayed(Duration(milliseconds: delay), () {
+        if (mounted) binding.scheduleForcedFrame();
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final settings = widget.settings;
     if (settings == null) {
       return MaterialApp(
         title: 'Явка',
@@ -148,17 +183,17 @@ class AppRoot extends StatelessWidget {
         darkTheme: AppTheme.dark(),
         themeMode: ThemeMode.system,
         home: HomeShell(
-          attendance: attendance,
-          schedule: schedule,
-          catalog: catalog,
-          notifications: notifications,
-          cloud: cloud,
-          updates: updates,
+          attendance: widget.attendance,
+          schedule: widget.schedule,
+          catalog: widget.catalog,
+          notifications: widget.notifications,
+          cloud: widget.cloud,
+          updates: widget.updates,
         ),
       );
     }
 
-    final controller = settings!;
+    final controller = settings;
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
@@ -169,13 +204,13 @@ class AppRoot extends StatelessWidget {
           darkTheme: AppTheme.dark(controller.accent),
           themeMode: controller.themeMode,
           home: HomeShell(
-            attendance: attendance,
-            schedule: schedule,
-            catalog: catalog,
-            notifications: notifications,
-            cloud: cloud,
+            attendance: widget.attendance,
+            schedule: widget.schedule,
+            catalog: widget.catalog,
+            notifications: widget.notifications,
+            cloud: widget.cloud,
             uiSettings: controller,
-            updates: updates,
+            updates: widget.updates,
           ),
         );
       },
