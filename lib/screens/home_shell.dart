@@ -9,6 +9,7 @@ import '../services/cloud/cloud_sync_controller.dart';
 import '../services/update/update_check.dart';
 import 'attendance_screen.dart';
 import 'schedule_screen.dart';
+import 'settings_screen.dart';
 
 /// Два раздела приложения: отметка посещаемости и расписание.
 class HomeShell extends StatefulWidget {
@@ -74,42 +75,62 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final hasSettings = widget.uiSettings != null;
+    final children = <Widget>[
+      AttendanceScreen(
+        attendance: _attendance,
+        cloud: widget.cloud,
+        schedule: _schedule,
+        notifications: _notifications,
+        uiSettings: widget.uiSettings,
+        catalog: widget.catalog,
+        updates: widget.updates,
+      ),
+      ScheduleScreen(
+        schedule: _schedule,
+        attendance: _attendance,
+        notifications: _notifications,
+        catalog: widget.catalog,
+        accountEmail: widget.cloud?.accountEmail,
+      ),
+      if (hasSettings)
+        SettingsScreen(
+          settings: widget.uiSettings!,
+          attendance: _attendance,
+          schedule: _schedule,
+          catalog: widget.catalog,
+          notifications: _notifications,
+          cloud: widget.cloud,
+          updates: widget.updates,
+          embedded: true,
+        )
+      else
+        const Center(child: Text('Настройки недоступны')),
+    ];
     return Scaffold(
       body: IndexedStack(
-        index: _tab,
-        children: [
-          AttendanceScreen(
-            attendance: _attendance,
-            cloud: widget.cloud,
-            schedule: _schedule,
-            notifications: _notifications,
-            uiSettings: widget.uiSettings,
-            catalog: widget.catalog,
-            updates: widget.updates,
-          ),
-          ScheduleScreen(
-            schedule: _schedule,
-            attendance: _attendance,
-            notifications: _notifications,
-            catalog: widget.catalog,
-            accountEmail: widget.cloud?.accountEmail,
-          ),
-        ],
+        index: _tab.clamp(0, children.length - 1),
+        children: children,
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
+        selectedIndex: _tab.clamp(0, children.length - 1),
         onDestinationSelected: (index) => setState(() => _tab = index),
         indicatorColor: scheme.primaryContainer,
-        destinations: const [
-          NavigationDestination(
+        destinations: [
+          const NavigationDestination(
             icon: Icon(Icons.how_to_reg_outlined),
             selectedIcon: Icon(Icons.how_to_reg_rounded),
             label: 'Отметка',
           ),
-          NavigationDestination(
+          const NavigationDestination(
             icon: Icon(Icons.event_note_outlined),
             selectedIcon: Icon(Icons.event_note_rounded),
             label: 'Расписание',
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings_rounded),
+            label: 'Настройки',
           ),
         ],
       ),

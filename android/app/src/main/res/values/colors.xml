@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Палитра экрана загрузки — та же, что у приложения
+         (AppPalette.canvas и AppPalette.canvasDark).
+         drawable-night подставляется системой в тёмной теме. -->
+    <color name="splash_background">#F7F7F4</color>
+</resources>

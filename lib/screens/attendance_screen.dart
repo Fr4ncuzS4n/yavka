@@ -18,7 +18,6 @@ import '../theme/status_style.dart';
 import '../util/desktop_layout.dart';
 import 'cloud_sync_screen.dart';
 import 'notifications_screen.dart';
-import 'settings_screen.dart';
 
 /// Ключ списка группы (используется в тестах).
 const kStudentListKey = Key('student-list');
@@ -555,12 +554,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           if (widget.notifications != null)
             NotificationBell(notifications: widget.notifications!),
           if (widget.cloud != null) _buildCloudAction(context),
-          if (widget.uiSettings != null)
-            IconButton(
-              tooltip: 'Настройки',
-              onPressed: () => _openSettings(context),
-              icon: const Icon(Icons.settings_outlined),
-            ),
           const SizedBox(width: 4),
         ],
       ),
@@ -837,24 +830,6 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     if (cloud == null) return;
     Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => CloudSyncScreen(cloud: cloud)),
-    );
-  }
-
-  void _openSettings(BuildContext context) {
-    final settings = widget.uiSettings;
-    if (settings == null) return;
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
-          settings: settings,
-          attendance: widget.attendance,
-          schedule: widget.schedule,
-          catalog: widget.catalog,
-          notifications: widget.notifications,
-          cloud: widget.cloud,
-          updates: widget.updates,
-        ),
-      ),
     );
   }
 

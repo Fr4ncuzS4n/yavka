@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -18,6 +19,72 @@ import 'notifications_screen.dart';
 const _siteUrl = 'https://fr4ncuzs4n.github.io/yavka-site/';
 const _releasesUrl = 'https://github.com/Fr4ncuzS4n/yavka/releases';
 
+/// Страница создания issue в репозитории «Явки».
+const issuesNewUrl = 'https://github.com/Fr4ncuzS4n/yavka/issues/new';
+
+/// Платформа для диагностики в сообщении об ошибке.
+String bugReportPlatform() {
+  if (kIsWeb) return 'Web';
+  return switch (defaultTargetPlatform) {
+    TargetPlatform.android => 'Android',
+    TargetPlatform.iOS => 'iOS',
+    TargetPlatform.windows => 'Windows',
+    TargetPlatform.linux => 'Linux',
+    TargetPlatform.macOS => 'macOS',
+    TargetPlatform.fuchsia => 'Fuchsia',
+  };
+}
+
+/// Готовая ссылка на issue: шаблон описания и диагностика уже вставлены.
+///
+/// Приложение не отправляет issue само (для этого нужен аккаунт GitHub и
+/// API-токен): оно открывает страницу GitHub с заполненной формой —
+/// пользователь проверяет описание и нажимает «Submit new issue».
+Uri bugReportIssueUri({
+  String? version,
+  String? platform,
+  String issueTitle = 'Сообщение об ошибке',
+}) {
+  final body = [
+    '**Что случилось:**',
+    '',
+    '',
+    '**Шаги воспроизведения:**',
+    '1. ',
+    '2. ',
+    '',
+    '**Ожидаемое поведение:**',
+    '',
+    '',
+    '---',
+    'Версия: ${version ?? 'неизвестна'}',
+    'Платформа: ${platform ?? bugReportPlatform()}',
+  ].join('\n');
+  return Uri.https(
+    'github.com',
+    '/Fr4ncuzS4n/yavka/issues/new',
+    {'title': issueTitle, 'body': body},
+  );
+}
+
+/// Открывает ссылку во внешнем браузере; если браузер недоступен —
+/// показывает сообщение, а не «тихую» ошибку.
+Future<void> openExternalUrl(BuildContext context, Uri url) async {
+  try {
+    final opened = await launchUrl(url, mode: LaunchMode.externalApplication);
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Не удалось открыть ссылку: $url')),
+      );
+    }
+  } catch (_) {
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Не удалось открыть ссылку: $url')),
+    );
+  }
+}
+
 /// Экран «Настройки»: дизайн, разделы приложения, данные, о приложении.
 ///
 /// Дизайн (тема и акцент) выбирается один раз и сохраняется на
@@ -33,6 +100,7 @@ class SettingsScreen extends StatelessWidget {
     this.notifications,
     this.cloud,
     this.updates,
+    this.embedded = false,
   });
 
   final UiSettingsController settings;
@@ -49,13 +117,18 @@ class SettingsScreen extends StatelessWidget {
   /// предлагает свежую версию.
   final UpdateController? updates;
 
+  /// Настройки как вкладка нижней панели: без собственного AppBar.
+  /// При переходе со старого места (иконки на экране отметки) остаётся
+  /// обычной страницей с AppBar.
+  final bool embedded;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final hasSections = cloud != null || notifications != null || catalog != null;
     final hasData = attendance != null || schedule != null || catalog != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Настройки')),
+      appBar: embedded ? null : AppBar(title: const Text('Настройки')),
       body: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -66,6 +139,13 @@ class SettingsScreen extends StatelessWidget {
                 return ListView(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                   children: [
+                    if (embedded) ...[
+                      Text(
+                        'Настройки',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                     _Card(
                       children: [
                         Text('Тема', style: Theme.of(context)
@@ -207,6 +287,8 @@ class SettingsScreen extends StatelessWidget {
                       ),
                     ],
                     const SizedBox(height: 12),
+                    const _BugReportCard(),
+                    const SizedBox(height: 12),
                     _AboutCard(updates: updates),
                     const SizedBox(height: 16),
                     Text(
@@ -334,6 +416,60 @@ class _LinkTile extends StatelessWidget {
   }
 }
 
+/// «Сообщить об ошибке»: открывает GitHub issue с готовым шаблоном.
+///
+/// Диагностика (версия и платформа) подставляется автоматически, чтобы
+/// не расспрашивать пользователя о том, что он и так видит в приложении.
+class _BugReportCard extends StatelessWidget {
+  const _BugReportCard();
+
+  static Future<PackageInfo?> _packageInfo() async {
+    try {
+      return await PackageInfo.fromPlatform();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _Card(
+      children: [
+        Row(
+          children: [
+            Icon(Icons.bug_report_outlined, color: theme.colorScheme.primary),
+            const SizedBox(width: 10),
+            Text('Сообщить об ошибке', style: theme.textTheme.titleMedium),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Откроется страница GitHub с готовым описанием. Проверьте его, '
+          'добавьте шаги воспроизведения и нажмите «Submit new issue».',
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 12),
+        FutureBuilder<PackageInfo?>(
+          future: _packageInfo(),
+          builder: (context, snapshot) {
+            return FilledButton.icon(
+              onPressed: () => openExternalUrl(
+                context,
+                bugReportIssueUri(version: snapshot.data?.version),
+              ),
+              icon: const Icon(Icons.open_in_new_rounded, size: 18),
+              label: const Text('Открыть GitHub issue'),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
 /// «О приложении»: лого, версия, обновления и ссылки.
 class _AboutCard extends StatelessWidget {
   const _AboutCard({this.updates});
@@ -400,13 +536,15 @@ class _AboutCard extends StatelessWidget {
         Row(
           children: [
             TextButton.icon(
-              onPressed: () => _open(context, _siteUrl),
+              onPressed: () =>
+                  openExternalUrl(context, Uri.parse(_siteUrl)),
               icon: const Icon(Icons.language_rounded, size: 18),
               label: const Text('Сайт'),
             ),
             const SizedBox(width: 8),
             TextButton.icon(
-              onPressed: () => _open(context, _releasesUrl),
+              onPressed: () =>
+                  openExternalUrl(context, Uri.parse(_releasesUrl)),
               icon: const Icon(Icons.download_rounded, size: 18),
               label: const Text('Релизы'),
             ),
@@ -423,17 +561,6 @@ class _AboutCard extends StatelessWidget {
       return await PackageInfo.fromPlatform();
     } catch (_) {
       return null;
-    }
-  }
-
-  Future<void> _open(BuildContext context, String url) async {
-    try {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Не удалось открыть ссылку: $url')),
-      );
     }
   }
 }
