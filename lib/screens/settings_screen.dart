@@ -306,15 +306,6 @@ class SettingsScreen extends StatelessWidget {
                     const _BugReportCard(),
                     const SizedBox(height: 12),
                     _AboutCard(updates: updates),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Выбор дизайна сохраняется на устройстве. Дизайн '
-                      'подойдёт любому старосте — «пацану» или «девочке».',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
                   ],
                 );
               },
