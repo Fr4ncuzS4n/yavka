@@ -22,6 +22,10 @@ const _releasesUrl = 'https://github.com/Fr4ncuzS4n/yavka/releases';
 /// Страница создания issue в репозитории «Явки».
 const issuesNewUrl = 'https://github.com/Fr4ncuzS4n/yavka/issues/new';
 
+/// Почта создателя — альтернатива GitHub issue. Та же, что указана
+/// в политике конфиденциальности на сайте приложения.
+const creatorEmail = 'Fr4ncuz.S4n@gmail.com';
+
 /// Платформа для диагностики в сообщении об ошибке.
 String bugReportPlatform() {
   if (kIsWeb) return 'Web';
@@ -35,6 +39,23 @@ String bugReportPlatform() {
   };
 }
 
+/// Текст сообщения об ошибке: шаблон и диагностика для issue и письма.
+String bugReportBody({String? version, String? platform}) => [
+  '**Что случилось:**',
+  '',
+  '',
+  '**Шаги воспроизведения:**',
+  '1. ',
+  '2. ',
+  '',
+  '**Ожидаемое поведение:**',
+  '',
+  '',
+  '---',
+  'Версия: ${version ?? 'неизвестна'}',
+  'Платформа: ${platform ?? bugReportPlatform()}',
+].join('\n');
+
 /// Готовая ссылка на issue: шаблон описания и диагностика уже вставлены.
 ///
 /// Приложение не отправляет issue само (для этого нужен аккаунт GitHub и
@@ -44,28 +65,23 @@ Uri bugReportIssueUri({
   String? version,
   String? platform,
   String issueTitle = 'Сообщение об ошибке',
-}) {
-  final body = [
-    '**Что случилось:**',
-    '',
-    '',
-    '**Шаги воспроизведения:**',
-    '1. ',
-    '2. ',
-    '',
-    '**Ожидаемое поведение:**',
-    '',
-    '',
-    '---',
-    'Версия: ${version ?? 'неизвестна'}',
-    'Платформа: ${platform ?? bugReportPlatform()}',
-  ].join('\n');
-  return Uri.https(
-    'github.com',
-    '/Fr4ncuzS4n/yavka/issues/new',
-    {'title': issueTitle, 'body': body},
-  );
-}
+}) =>
+    Uri.https('github.com', '/Fr4ncuzS4n/yavka/issues/new', {
+      'title': issueTitle,
+      'body': bugReportBody(version: version, platform: platform),
+    });
+
+/// Письмо создателю с тем же описанием — если нет аккаунта GitHub или
+/// не хочется публиковать ошибку в issue. Открывает почтовое приложение
+/// с готовым письмом; отправку подтверждает пользователь.
+Uri bugReportMailUri({String? version, String? platform}) => Uri(
+  scheme: 'mailto',
+  path: creatorEmail,
+  queryParameters: {
+    'subject': 'Ошибка в Явке',
+    'body': bugReportBody(version: version, platform: platform),
+  },
+);
 
 /// Открывает ссылку во внешнем браузере; если браузер недоступен —
 /// показывает сообщение, а не «тихую» ошибку.
@@ -445,8 +461,9 @@ class _BugReportCard extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Откроется страница GitHub с готовым описанием. Проверьте его, '
-          'добавьте шаги воспроизведения и нажмите «Submit new issue».',
+          'Ошибку можно отправить в GitHub issue или написать создателю '
+          'на почту. Описание уже заполнено — проверьте его и добавьте '
+          'шаги воспроизведения. Отправку подтверждаете вы сами.',
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -455,13 +472,28 @@ class _BugReportCard extends StatelessWidget {
         FutureBuilder<PackageInfo?>(
           future: _packageInfo(),
           builder: (context, snapshot) {
-            return FilledButton.icon(
-              onPressed: () => openExternalUrl(
-                context,
-                bugReportIssueUri(version: snapshot.data?.version),
-              ),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Открыть GitHub issue'),
+            final version = snapshot.data?.version;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => openExternalUrl(
+                    context,
+                    bugReportIssueUri(version: version),
+                  ),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('Открыть GitHub issue'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () => openExternalUrl(
+                    context,
+                    bugReportMailUri(version: version),
+                  ),
+                  icon: const Icon(Icons.mail_outline_rounded, size: 18),
+                  label: const Text('Написать на почту'),
+                ),
+              ],
             );
           },
         ),

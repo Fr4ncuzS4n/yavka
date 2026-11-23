@@ -27,6 +27,23 @@ void main() {
     expect(body, contains('Android'));
   });
 
+  test('письмо создателю содержит тему и тот же шаблон', () {
+    final uri = bugReportMailUri(version: '1.2.3', platform: 'Android');
+
+    expect(uri.scheme, 'mailto');
+    expect(uri.path, creatorEmail);
+    expect(uri.queryParameters['subject'], contains('Ошибка'));
+    final body = uri.queryParameters['body']!;
+    expect(body, contains('Шаги воспроизведения'));
+    expect(body, contains('1.2.3'));
+    expect(body, contains('Android'));
+    // Оба канала сообщают об ошибке одним и тем же текстом.
+    expect(
+      body,
+      bugReportBody(version: '1.2.3', platform: 'Android'),
+    );
+  });
+
   test('платформа для диагностики определена', () {
     expect(bugReportPlatform(), isNotEmpty);
   });
@@ -57,16 +74,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Сообщить об ошибке'), findsOneWidget);
+    expect(find.text('Открыть GitHub issue'), findsOneWidget);
+    expect(find.text('Написать на почту'), findsOneWidget);
+
     await tester.ensureVisible(find.text('Открыть GitHub issue'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Открыть GitHub issue'));
     await tester.pumpAndSettle();
 
-    final launch = calls.singleWhere((call) => call.method == 'launch');
-    final url = launch.arguments['url'] as String;
+    var launches = calls.where((call) => call.method == 'launch').toList();
+    var url = launches.single.arguments['url'] as String;
     expect(url, startsWith(issuesNewUrl));
-    final uri = Uri.parse(url);
+    var uri = Uri.parse(url);
     expect(uri.queryParameters['body'], contains('Шаги воспроизведения'));
+    expect(uri.queryParameters['body'], contains(bugReportPlatform()));
+
+    await tester.ensureVisible(find.text('Написать на почту'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Написать на почту'));
+    await tester.pumpAndSettle();
+
+    launches = calls.where((call) => call.method == 'launch').toList();
+    url = launches.last.arguments['url'] as String;
+    expect(url, startsWith('mailto:$creatorEmail'));
+    uri = Uri.parse(url);
     expect(uri.queryParameters['body'], contains(bugReportPlatform()));
   });
 
