@@ -876,35 +876,57 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 880),
-        child: ListView(
-          key: kStudentListKey,
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        // Название группы и счётчик отметок закреплены над списком:
+        // при прокрутке длинного списка они остаются на экране,
+        // прокручиваются только строки студентов.
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (_sequential && !_isWeekend && students.isNotEmpty) ...[
-              const _SequentialBanner(),
-              const SizedBox(height: 16),
-            ],
-            _GroupHeader(
-              title: lesson == null ? _groupTitle : 'Пара «${lesson.subject}»',
-              subtitle: lesson == null
-                  ? null
-                  : _lessonSubtitle(lesson),
-              marked: _markedCount,
-              total: students.length,
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (_sequential && !_isWeekend && students.isNotEmpty) ...[
+                    const _SequentialBanner(),
+                    const SizedBox(height: 16),
+                  ],
+                  _GroupHeader(
+                    title: lesson == null
+                        ? _groupTitle
+                        : 'Пара «${lesson.subject}»',
+                    subtitle: lesson == null
+                        ? null
+                        : _lessonSubtitle(lesson),
+                    marked: _markedCount,
+                    total: students.length,
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
-            if (students.isEmpty)
-              Text(
-                'Список группы пуст. Подключите Google Таблицу с журналом '
-                'и загрузите список — ФИО возьмутся из колонки журнала.',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                ),
+            Expanded(
+              child: ListView(
+                key: kStudentListKey,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  if (students.isEmpty)
+                    Text(
+                      'Список группы пуст. Подключите Google Таблицу '
+                      'с журналом и загрузите список — ФИО возьмутся '
+                      'из колонки журнала.',
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  for (var i = 0; i < students.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    _studentRowItem(students[i]),
+                  ],
+                ],
               ),
-            for (var i = 0; i < students.length; i++) ...[
-              if (i > 0) const SizedBox(height: 8),
-              _studentRowItem(students[i]),
-            ],
+            ),
           ],
         ),
       ),
