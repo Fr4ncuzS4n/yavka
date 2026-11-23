@@ -1,4 +1,6 @@
 import 'attendance_entry.dart';
+import 'attendance_status.dart';
+import 'schedule_lesson.dart';
 import 'student.dart';
 
 /// Дата без времени — используется как ключ дня посещаемости.
@@ -98,36 +100,108 @@ class AttendanceSession {
   /// Отметка студента на конкретной паре.
   ///
   /// Сначала ищем по идентификатору пары (локальные отметки), затем —
-  /// по названию (отметки, загруженные из таблицы).
+  /// по названию (отметки, загруженные из таблицы без id пары).
+  ///
+  /// Совпадение по названию считается отметкой этой пары, только если
+  /// у записи нет своего идентификатора пары: в дне бывает два одинаковых
+  /// предмета, и отметка одной из них не должна выдаваться за отметку
+  /// другой (иначе студент показывается отмеченным на обеих парах и
+  /// поочерёдная отметка его пропускает).
   AttendanceEntry? entryInLesson(
     String studentId, {
     String? lessonKey,
     String? lessonTitle,
   }) {
-    if (lessonKey != null && lessonKey.trim().isNotEmpty) {
-      final direct = entries[entryKey(studentId: studentId, lessonKey: lessonKey)];
+    final key = lessonKey?.trim();
+    if (key != null && key.isNotEmpty) {
+      final direct = entries[entryKey(studentId: studentId, lessonKey: key)];
       if (direct != null) return direct;
     }
     final title = lessonTitle?.trim();
     if (title == null || title.isEmpty) return null;
     for (final item in entries.entries) {
       if (!item.key.startsWith('$studentId|')) continue;
-      if (item.value.lessonTitle == title) return item.value;
+      final entry = item.value;
+      final entryKey = entry.lessonKey?.trim() ?? '';
+      if (key != null &&
+          key.isNotEmpty &&
+          entryKey.isNotEmpty &&
+          entryKey != key) {
+        continue;
+      }
+      if (entry.lessonTitle == title) return entry;
     }
     return null;
   }
 
+  /// Отметка студента для вкладки «Весь день».
+  ///
+  /// Это собственная дневная отметка студента. Если её нет, но все пары
+  /// дня у студента отмечены, дневная отметка выводится из них:
+  /// «Опоздал» считается «Пришёл» (человек был на паре, просто позже —
+  /// время опоздания остаётся в отметках пар), «Пришёл» — «Пришёл»,
+  /// «По уважительной» — «По уважительной», «Не пришёл» — «Непришёл».
+  ///
+  /// Единой дневной отметки нет, если хоть одна пара не отмечена или
+  /// статусы пар из разных групп (например, «Пришёл» и «Не пришёл»).
+  AttendanceEntry? wholeDayEntryFor(
+    String studentId,
+    List<ScheduleLesson> lessons,
+  ) {
+    final own = entries[studentId];
+    if (own != null) return own;
+    if (lessons.isEmpty) return null;
+
+    AttendanceStatus? common;
+    DateTime markedAt = dateOnly(DateTime.now());
+    for (final lesson in lessons) {
+      final entry = entryInLesson(
+        studentId,
+        lessonKey: lesson.id,
+        lessonTitle: lesson.subject,
+      );
+      if (entry == null) return null;
+      final status = entry.status == AttendanceStatus.late
+          ? AttendanceStatus.came
+          : entry.status;
+      if (common == null) {
+        common = status;
+        markedAt = entry.markedAt;
+      } else if (common != status) {
+        return null;
+      }
+    }
+    // Дневная отметка без привязки к паре: время важно только у
+    // «Опоздал», а оно видно во вкладках пар.
+    return AttendanceEntry(status: common!, markedAt: markedAt);
+  }
+
   /// Сколько студентов отмечено на паре.
-  int markedCountInLesson({String? lessonKey, String? lessonTitle}) =>
-      entries.values.where((entry) {
-        if (lessonKey != null && entry.lessonKey == lessonKey) return true;
-        final title = lessonTitle?.trim();
-        return entry.lessonKey == null &&
-            lessonKey != null &&
-            title != null &&
-            title.isNotEmpty &&
-            entry.lessonTitle == title;
-      }).length;
+  ///
+  /// Считаются разные студенты, а не записи: у одного студента может
+  /// оказаться две записи на одну пару — локальная с id пары и пришедшая
+  /// из таблицы только с её названием. Такой студент — одна отметка.
+  int markedCountInLesson({String? lessonKey, String? lessonTitle}) {
+    final title = lessonTitle?.trim();
+    return {
+      for (final item in entries.entries)
+        if ((lessonKey != null && item.value.lessonKey == lessonKey) ||
+            (lessonKey != null &&
+                title != null &&
+                title.isNotEmpty &&
+                item.value.lessonKey == null &&
+                item.value.lessonTitle == title))
+          item.key.split('|').first.trim(),
+    }.length;
+  }
+
+  /// Сколько разных студентов отмечено за день — на весь день или
+  /// хотя бы на одной паре. Ячейки не суммируются: студент, отмеченный
+  /// на трёх парах, считается один раз.
+  int get markedCountForDay => entries.keys
+      .map((key) => key.split('|').first.trim())
+      .toSet()
+      .length;
 
   /// Создаёт пустую сессию на сегодня.
   factory AttendanceSession.forToday({

@@ -6,7 +6,8 @@ import '../../models/attendance_status.dart';
 /// Как отметка выглядит в ячейке журнала.
 ///
 /// - зелёная заливка — «пришёл»;
-/// - оранжевая заливка + время («8:30») — «опоздал»;
+/// - оранжевая заливка + время («8:30») — «опоздал» (без времени —
+///   заливка без текста, время добавится повторным кликом);
 /// - красная заливка + буква «Н» — «не пришёл»;
 /// - синяя заливка — «по уважительной причине».
 abstract final class JournalCellCodec {
@@ -59,9 +60,10 @@ abstract final class JournalCellCodec {
       colorFor(status).toARGB32() & 0xFFFFFF;
 
   /// Текст ячейки для статуса: время для «опоздал», «Н» для «не пришёл»,
-  /// у остальных заливка без текста.
+  /// у остальных заливка без текста. У «опоздал» без времени текста тоже
+  /// нет — время появится вторым кликом, и тогда запишется.
   static String? cellTextFor(AttendanceEntry entry) => switch (entry.status) {
-    AttendanceStatus.late => formatTime(entry.markedAt),
+    AttendanceStatus.late => entry.hasTime ? formatTime(entry.markedAt) : null,
     AttendanceStatus.absent => absentMark,
     _ => null,
   };

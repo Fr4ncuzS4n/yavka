@@ -49,9 +49,12 @@ class ScheduleScreen extends StatefulWidget {
 class _ScheduleScreenState extends State<ScheduleScreen>
     with TickerProviderStateMixin {
   late final TabController _days = TabController(
-    length: 7,
+    length: 6,
     vsync: this,
-    initialIndex: DateTime.now().weekday - 1,
+    // Воскресенье (weekday 7) не показываем — открываем субботу.
+    initialIndex: DateTime.now().weekday == DateTime.sunday
+        ? 5
+        : DateTime.now().weekday - 1,
   );
 
   @override
@@ -124,7 +127,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                 unselectedLabelColor: scheme.onSurfaceVariant,
                 indicatorColor: scheme.primary,
                 tabs: [
-                  for (var weekday = 1; weekday <= 7; weekday++)
+                  // Воскресенье (weekday 7) не показываем.
+                  for (var weekday = 1; weekday <= 6; weekday++)
                     Tab(text: weekdayShortName(weekday)),
                 ],
               ),
@@ -167,7 +171,8 @@ class _ScheduleScreenState extends State<ScheduleScreen>
               child: TabBarView(
                 controller: _days,
                 children: [
-                  for (var weekday = 1; weekday <= 7; weekday++)
+                  // Воскресенье (weekday 7) не показываем.
+                  for (var weekday = 1; weekday <= 6; weekday++)
                     _DayPage(
                       key: ValueKey('day-$weekday'),
                       weekday: weekday,
@@ -321,58 +326,66 @@ class _PasteDialogState extends State<_PasteDialog> {
       title: const Text('Вставить документ'),
       content: SizedBox(
         width: 480,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text(
-              'Вставьте текст расписания. Строки вида '
-              '«09:00–10:30 Математика, каб. 201» станут парами. '
-              'Если в документе есть заголовки дней («Понедельник»), '
-              'пары распределятся по ним.',
-              style: TextStyle(fontSize: 13),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _controller,
-              maxLines: 8,
-              autofocus: true,
-              // Без этого кнопка «Вставить» не узнает, что текст введён.
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                hintText:
-                    'Понедельник\n09:00–10:30 Математика, каб. 201\n'
-                    '10:40 Физика, ауд. 12, Иванова И.И.',
-                border: OutlineInputBorder(),
+        // Прокрутка: на узком окне или под клавиатурой контент не
+        // помещается по высоте — без неё нижний текст («Заменить пары
+        // этих дней») вылезает за границы окна.
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Вставьте текст расписания. Строки вида '
+                '«09:00–10:30 Математика, каб. 201» станут парами. '
+                'Если в документе есть заголовки дней («Понедельник»), '
+                'пары распределятся по ним.',
+                style: TextStyle(fontSize: 13),
               ),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<int>(
-              initialValue: _weekday,
-              decoration: const InputDecoration(
-                labelText: 'Если день в строке не указан — добавить в',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _controller,
+                maxLines: 8,
+                autofocus: true,
+                // Без этого кнопка «Вставить» не узнает, что текст введён.
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  hintText:
+                      'Понедельник\n09:00–10:30 Математика, каб. 201\n'
+                      '10:40 Физика, ауд. 12, Иванова И.И.',
+                  border: OutlineInputBorder(),
+                ),
               ),
-              items: [
-                for (var day = 1; day <= 7; day++)
-                  DropdownMenuItem(
-                    value: day,
-                    child: Text(weekdayFullName(day)),
-                  ),
-              ],
-              onChanged: (value) =>
-                  setState(() => _weekday = value ?? _weekday),
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Заменить пары этих дней'),
-              subtitle: const Text(
-                'Существующие пары затронутых дней будут удалены.',
+              const SizedBox(height: 8),
+              DropdownButtonFormField<int>(
+                initialValue: _weekday,
+                decoration: const InputDecoration(
+                  labelText: 'Если день в строке не указан — добавить в',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  // Воскресенье не предлагаем, но показываем, если пара
+                  // уже лежит в этот день (старые записи расписания).
+                  for (var day = 1; day <= 7; day++)
+                    if (day != DateTime.sunday || _weekday == DateTime.sunday)
+                      DropdownMenuItem(
+                        value: day,
+                        child: Text(weekdayFullName(day)),
+                      ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _weekday = value ?? _weekday),
               ),
-              value: _replace,
-              onChanged: (value) => setState(() => _replace = value),
-            ),
-          ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Заменить пары этих дней'),
+                subtitle: const Text(
+                  'Существующие пары затронутых дней будут удалены.',
+                ),
+                value: _replace,
+                onChanged: (value) => setState(() => _replace = value),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
@@ -703,11 +716,14 @@ class _LessonDialogState extends State<_LessonDialog> {
                 border: OutlineInputBorder(),
               ),
               items: [
+                // Воскресенье не предлагаем, но показываем, если пара
+                // уже лежит в этот день (старые записи расписания).
                 for (var day = 1; day <= 7; day++)
-                  DropdownMenuItem(
-                    value: day,
-                    child: Text(weekdayFullName(day)),
-                  ),
+                  if (day != DateTime.sunday || _weekday == DateTime.sunday)
+                    DropdownMenuItem(
+                      value: day,
+                      child: Text(weekdayFullName(day)),
+                    ),
               ],
               onChanged: (value) =>
                   setState(() => _weekday = value ?? _weekday),
@@ -837,7 +853,7 @@ class _DayPage extends StatelessWidget {
               const SizedBox(height: 12),
             ],
             for (var i = 0; i < lessons.length; i++) ...[
-              if (i > 0) const SizedBox(height: 8),
+              if (i > 0) const SizedBox(height: 12),
               _LessonCard(
                 lesson: lessons[i],
                 isToday: isToday,

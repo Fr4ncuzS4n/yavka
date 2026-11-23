@@ -40,6 +40,37 @@ void main() {
     expect(list.right, windowWidth);
   }, variant: TargetPlatformVariant.desktop());
 
+  testWidgets('На десктопе кнопки пар идут в колонку по одной', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      AppRoot(
+        attendance: AttendanceController(
+          session: AttendanceSession(
+            groupName: demoGroupName,
+            students: demoStudents,
+            date: DateTime(2026, 11, 9),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final panel = tester.getRect(find.byKey(kMarkingPanelKey));
+    final wholeDay = tester.getRect(find.byKey(const Key('whole-day-chip')));
+    final first = tester.getRect(find.byKey(const Key('lesson-chip-temp-pair-1')));
+    final second = tester.getRect(
+      find.byKey(const Key('lesson-chip-temp-pair-2')),
+    );
+
+    // «Весь день» и пары — одну под другой, без двух кнопок в одной строке.
+    expect(first.top, greaterThan(wholeDay.bottom));
+    expect(second.top, greaterThanOrEqualTo(first.bottom));
+    expect(first.left, closeTo(second.left, 1));
+    expect(first.width, closeTo(second.width, 1));
+    expect(first.right, lessThanOrEqualTo(panel.right));
+  }, variant: TargetPlatformVariant.desktop());
+
   testWidgets('На десктопе отметка «Пришёл» работает как обычно', (
     WidgetTester tester,
   ) async {

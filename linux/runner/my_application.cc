@@ -18,6 +18,22 @@ G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 static void first_frame_cb(MyApplication* self, FlView* view) {
   gtk_widget_show(gtk_widget_get_toplevel(GTK_WIDGET(view)));
 }
+
+// На X11 (ALT Linux «Рабочая станция», xfwm4 и др.) показывать окно до
+// создания Flutter-поверхности нельзя: WM успевает перепривязать окно к
+// рамке, пока поверхность ещё имеет размер 1x1, и визуал смещается — часть
+// интерфейса рисуется слева снизу, хотя клики приходят в свои координаты.
+// На Wayland (niri) наоборот: subsurface в синхронном режиме не рисуется,
+// пока не показан верхний уровень, поэтому там окно показываем сразу.
+static gboolean show_window_early() {
+#ifdef GDK_WINDOWING_X11
+  if (GDK_IS_X11_DISPLAY(gdk_display_get_default())) {
+    return FALSE;
+  }
+#endif
+  return TRUE;
+}
+
 // Implements GApplication::activate.
 static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
@@ -53,6 +69,18 @@ static void my_application_activate(GApplication* application) {
 
   gtk_window_set_default_size(window, 1280, 720);
 
+  // Ограничения размера: левая панель отметки фиксированной ширины (320)
+  // и список студентов должны оставаться читаемыми. Максимум не даёт
+  // интерфейсу растягиваться на весь 4K-экран.
+  GdkGeometry geometry = {};
+  geometry.min_width = 900;
+  geometry.min_height = 600;
+  geometry.max_width = 1920;
+  geometry.max_height = 1080;
+  gtk_window_set_geometry_hints(
+      window, nullptr, &geometry,
+      static_cast<GdkWindowHints>(GDK_HINT_MIN_SIZE | GDK_HINT_MAX_SIZE));
+
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(
       project, self->dart_entrypoint_arguments);
@@ -66,17 +94,21 @@ static void my_application_activate(GApplication* application) {
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
 
-  // Show the window immediately: on some Wayland compositors (e.g. niri) the
-  // Flutter rendering subsurface in synchronized mode is never consumed until
-  // the toplevel commits, so waiting for the first frame before showing the
-  // window deadlocks and the window never appears.
-  gtk_widget_show(GTK_WIDGET(window));
-
-  // Show the window when Flutter renders.
-  // Requires the view to be realized so we can start rendering.
+  // Show the window when Flutter renders. Requires the view to be realized
+  // so we can start rendering. On X11 this is the only place where the
+  // window is shown: mapping it earlier makes the Flutter surface shift
+  // relative to the window (visual at bottom left, input in place).
   g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
                            self);
   gtk_widget_realize(GTK_WIDGET(view));
+
+  // On some Wayland compositors (e.g. niri) the Flutter rendering subsurface
+  // in synchronized mode is never consumed until the toplevel commits, so
+  // waiting for the first frame before showing the window deadlocks and the
+  // window never appears. Only apply this workaround off X11.
+  if (show_window_early()) {
+    gtk_widget_show(GTK_WIDGET(window));
+  }
 
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
 

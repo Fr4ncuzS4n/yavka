@@ -315,16 +315,25 @@ void main() {
         findsOneWidget,
       );
 
-      // Возвращаемся к «весь день» — отметка пары здесь не видна.
+      // Возвращаемся к «весь день». Пара в дне одна, все ячейки дня у
+      // Алексея заполнены «Пришёл» — его дневная отметка выводится из
+      // отметок пар. Мария не отмечена.
       await tester.tap(find.text('Весь день'));
       await tester.pumpAndSettle();
       expect(find.text('Пара «Математика»'), findsNothing);
       expect(
         find.descendant(
           of: find.byKey(kStudentListKey),
+          matching: find.textContaining('Пришёл'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(kStudentListKey),
           matching: find.text('нет отметки'),
         ),
-        findsNWidgets(2),
+        findsOneWidget,
       );
 
       // Отметка на паре на месте.

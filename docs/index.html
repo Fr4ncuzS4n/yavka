@@ -1,91 +1,61 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Явка — журнал посещаемости</title>
-<meta name="description" content="Приложение «Явка»: староста быстро отмечает, кто пришёл, кто опоздал и кого нет. Отметки синхронизируются с Google Таблицей.">
-<style>
-  :root {
-    --accent: #176B62;
-    --canvas: #F7F7F4;
-    --ink: #1B1B1F;
-    --ink-soft: #55565E;
-    --line: #E5E5E1;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    background: var(--canvas);
-    color: var(--ink);
-    line-height: 1.6;
-  }
-  main { max-width: 720px; margin: 0 auto; padding: 32px 20px 48px; }
-  header { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
-  header img { width: 72px; height: 72px; border-radius: 16px; }
-  h1 { font-size: 28px; margin: 0; }
-  .slogan { color: var(--ink-soft); margin: 0 0 24px; }
-  section {
-    background: #fff;
-    border: 1px solid var(--line);
-    border-radius: 16px;
-    padding: 20px 24px;
-    margin-bottom: 16px;
-  }
-  h2 { font-size: 18px; margin: 0 0 10px; }
-  ul { margin: 0; padding-left: 20px; }
-  a { color: var(--accent); text-decoration: none; }
-  a:hover { text-decoration: underline; }
-  .cta {
-    display: inline-block;
-    background: var(--accent);
-    color: #fff;
-    padding: 10px 18px;
-    border-radius: 12px;
-    font-weight: 600;
-  }
-  .cta:hover { text-decoration: none; opacity: .92; }
-  footer { color: var(--ink-soft); font-size: 14px; text-align: center; margin-top: 24px; }
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Явка — журнал посещаемости</title>
+  <meta name="description" content="Приложение «Явка»: староста быстро отмечает, кто пришёл, кто опоздал и кого нет. Отметки синхронизируются с Google Таблицей.">
+  <link rel="stylesheet" href="styles.css">
+  <script src="mobile-banner.js" defer></script>
 </head>
 <body>
-<main>
-  <header>
-    <img src="logo.png" alt="Логотип «Явка»">
-    <h1>Явка</h1>
+  <header class="site-header">
+    <a class="brand" href="index.html">
+      <img src="logo.png" alt="Логотип «Явка»">
+      Явка
+    </a>
+    <nav class="site-nav" aria-label="Основная навигация">
+      <a href="index.html" aria-current="page">Главная</a>
+      <a href="download.html">Скачать</a>
+      <a href="guide.html">Инструкция</a>
+      <a href="privacy.html">Конфиденциальность</a>
+      <a href="https://github.com/Fr4ncuzS4n/yavka">GitHub</a>
+    </nav>
   </header>
-  <p class="slogan">Журнал посещаемости для старосты: кто пришёл, кто опоздал, кого нет.</p>
 
-  <section>
-    <h2>Что умеет</h2>
-    <ul>
-      <li>Четыре кнопки отметки: «Пришёл», «Непришёл», «Опоздал» (со временем), «По уважительной».</li>
-      <li>Отметки на весь день или на конкретную пару из расписания.</li>
-      <li>Google Таблица как общий журнал: приложение подстраивается под существующий журнал и правит только ячейки отметок.</li>
-      <li>Автоматическая отправка и загрузка отметок, локальная база предметов, преподавателей и кабинетов.</li>
-    </ul>
-  </section>
+  <main>
+    <h1>Явка</h1>
+    <p class="slogan">Журнал посещаемости для старосты: кто пришёл, кто опоздал, кого нет.</p>
 
-  <section>
-    <h2>Скачать</h2>
-    <p>Сборки для Windows, Linux и Android — на странице релизов:</p>
-    <a class="cta" href="https://github.com/Fr4ncuzS4n/yavka/releases">Загрузить «Явку»</a>
-    <p>Или откройте веб-версию прямо в браузере:
-      <a href="/yavka/app/">Явка для браузера</a>.</p>
-  </section>
+    <section>
+      <h2>Что умеет</h2>
+      <ul>
+        <li>Четыре кнопки отметки: «Пришёл», «Непришёл», «Опоздал» (со временем), «По уважительной».</li>
+        <li>Отметки на весь день или на конкретную пару из расписания.</li>
+        <li>Google Таблица как общий журнал: приложение подстраивается под существующий журнал и правит только ячейки отметок.</li>
+        <li>Автоматическая отправка и загрузка отметок, локальная база предметов, преподавателей и кабинетов.</li>
+      </ul>
+    </section>
 
-  <section>
-    <h2>Поддержка</h2>
-    <p>Вопросы о приложении и доступе к данным:
-      <a href="mailto:Fr4ncuz.S4n@gmail.com">Fr4ncuz.S4n@gmail.com</a></p>
-  </section>
+    <section>
+      <h2>Скачать</h2>
+      <p>Android, Windows, Linux (AppImage, deb, rpm) — и веб-версия в браузере.</p>
+      <a class="cta" href="download.html">Загрузить «Явку»</a>
+      <a class="cta-secondary" href="/yavka/app/">Открыть веб-версию</a>
+    </section>
 
-  <footer>
-    <a href="privacy.html">Политика конфиденциальности</a> ·
-    <a href="https://github.com/Fr4ncuzS4n/yavka">Исходный код</a><br>
-    © 2026 Явка
-  </footer>
-</main>
+    <section>
+      <h2>Поддержка</h2>
+      <p>Вопросы о приложении и доступе к данным:
+        <a href="mailto:Fr4ncuz.S4n@gmail.com">Fr4ncuz.S4n@gmail.com</a></p>
+    </section>
+
+    <footer>
+      <a href="privacy.html">Политика конфиденциальности</a> ·
+      <a href="https://github.com/Fr4ncuzS4n/yavka">Исходный код</a> ·
+      Лицензия <a href="https://github.com/Fr4ncuzS4n/yavka/blob/main/LICENSE">GPL-3.0</a><br>
+      © 2026 Явка
+    </footer>
+  </main>
 </body>
 </html>

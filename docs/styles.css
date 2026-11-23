@@ -1,0 +1,142 @@
+/* Общие стили страниц сайта «Явки» (лендинг, скачивание, инструкция,
+   конфиденциальность). Палитра совпадает с приложением. */
+:root {
+  --accent: #176B62;
+  --accent-soft: #E7F1EF;
+  --canvas: #F7F7F4;
+  --ink: #1B1B1F;
+  --ink-soft: #55565E;
+  --line: #E5E5E1;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  line-height: 1.6;
+}
+main { max-width: 720px; margin: 0 auto; padding: 24px 20px 48px; }
+
+/* Шапка с навигацией */
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px 20px 0;
+}
+.site-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 20px;
+}
+.site-header .brand img { width: 44px; height: 44px; border-radius: 12px; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-left: auto; }
+.site-nav a { color: var(--ink-soft); text-decoration: none; font-size: 15px; }
+.site-nav a:hover { color: var(--accent); }
+.site-nav a[aria-current="page"] { color: var(--accent); font-weight: 600; }
+
+/* Контент */
+h1 { font-size: 28px; margin: 0; }
+h2 { font-size: 18px; margin: 0 0 10px; }
+.slogan { color: var(--ink-soft); margin: 0 0 24px; }
+section {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+ul { margin: 0; padding-left: 20px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  background: var(--accent-soft);
+  border-radius: 6px;
+  padding: 1px 6px;
+  font-size: 0.92em;
+}
+
+/* Кнопка-действие */
+.cta {
+  display: inline-block;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.cta:hover { text-decoration: none; opacity: .92; }
+.cta-secondary {
+  display: inline-block;
+  background: var(--accent-soft);
+  color: var(--accent);
+  padding: 10px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+}
+.cta-secondary:hover { text-decoration: none; opacity: .88; }
+
+/* Таблица файлов сборок */
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+th { color: var(--ink-soft); font-weight: 600; }
+tr:last-child td { border-bottom: none; }
+.muted { color: var(--ink-soft); font-size: 14px; }
+.updated { color: var(--ink-soft); font-size: 14px; margin-bottom: 24px; }
+
+/* Плашка «раздел в работе» */
+.placeholder {
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 12px 16px;
+  color: var(--ink-soft);
+  font-size: 15px;
+}
+
+footer {
+  color: var(--ink-soft);
+  font-size: 14px;
+  text-align: center;
+  margin-top: 24px;
+}
+
+/* Баннер «используйте веб-версию» на телефоне */
+.mobile-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 14px;
+  padding: 12px 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+.mobile-banner p { margin: 0; font-size: 15px; }
+.mobile-banner a { color: #fff; text-decoration: underline; }
+.mobile-banner-close {
+  margin-left: auto;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .16);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mobile-banner-close:hover { background: rgba(255, 255, 255, .28); }

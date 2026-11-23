@@ -13,6 +13,15 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
+            <!-- Impeller на части устройств (Mali и другие GPU) не
+                 восстанавливает GL-поверхность после возврата из внешнего
+                 приложения (браузер при входе Google): экран остаётся
+                 чёрным до перезапуска. Skia не страдает этим багом.
+                 См. flutter/flutter#195424. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.EnableImpeller"
+                android:value="false"
+                />
             <!-- Specifies an Android theme to apply to this Activity as soon as
                  the Android process has started. This theme is visible to the user
                  while the Flutter UI initializes. After that, this theme continues

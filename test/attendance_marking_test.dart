@@ -72,10 +72,11 @@ void main() {
     await tester.tap(find.text('Опоздал'));
     await tester.pumpAndSettle();
 
+    // Первый клик — пустой «опоздал»: времени ещё нет.
     expect(
       find.descendant(
         of: find.byKey(kStudentListKey),
-        matching: find.text('Опоздал'),
+        matching: find.text('без времени'),
       ),
       findsOneWidget,
     );
@@ -84,6 +85,47 @@ void main() {
       find.descendant(
         of: find.byKey(const ValueKey('student-1')),
         matching: find.text('нет отметки'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('Повторный клик по «Опоздал» ставит время', (
+    WidgetTester tester,
+  ) async {
+    await _pumpApp(tester);
+
+    await tester.tap(find.text('Опоздал').last);
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: find.byKey(kStudentListKey),
+        matching: find.text('без времени'),
+      ),
+      findsOneWidget,
+    );
+
+    // Кнопка «Опоздал» и статус-чип в строке называются одинаково —
+    // тапаем по кнопке (она последняя в дереве).
+    await tester.tap(find.text('Опоздал').last);
+    await tester.pumpAndSettle();
+
+    // «Без времени» сменилось на время вида «Ч:ММ».
+    expect(
+      find.descendant(
+        of: find.byKey(kStudentListKey),
+        matching: find.text('без времени'),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(kStudentListKey),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Text &&
+              RegExp(r'^\d{1,2}:\d{2}$').hasMatch(widget.data ?? ''),
+        ),
       ),
       findsOneWidget,
     );

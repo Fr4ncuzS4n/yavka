@@ -35,8 +35,9 @@ const kMarkingPanelKey = Key('marking-panel');
 ///
 /// Староста (или куратор) выбирает студента в списке и отмечает его
 /// одной из 4 кнопок: «Пришёл», «Непришёл», «Опоздал», «По уважительной».
-/// «Непришёл» подтверждается вторым нажатием. Время пишется только у
-/// «Опоздал» — оно уходит в журнал; у «Пришёл» и «Непришёл» времени нет.
+/// «Непришёл» подтверждается вторым нажатием. «Опоздал» ставится тоже
+/// в два клика: первый — пустой «опоздал» без времени, второй — ставит
+/// время (оно уходит в журнал). У «Пришёл» и «Непришёл» времени нет.
 ///
 /// Над списком выбираются день и пара: отметки пишутся за выбранный день
 /// (по умолчанию — сегодня, задним числом тоже можно) и, если выбрана
@@ -310,20 +311,23 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   /// Чипы выбора: «Весь день» и пары дня.
   List<Widget> _lessonChips() => [
     ChoiceChip(
+      key: const Key('whole-day-chip'),
       label: const Text('Весь день'),
       selected: _lessonId == null,
       onSelected: (_) => _selectLesson(null),
     ),
     for (final lesson in _dayLessons)
       ChoiceChip(
+        key: ValueKey('lesson-chip-${lesson.id}'),
         label: Text('${lesson.startLabel} · ${lesson.subject}'),
         selected: _lessonId == lesson.id,
         onSelected: (_) => _selectLesson(lesson.id),
       ),
   ];
 
-  /// На Android пары идут одной строкой (Row со скроллом), на других
-  /// платформах — переносятся в несколько строк (Wrap).
+  /// На Android пары идут одной строкой (Row со скроллом), на web —
+  /// переноской в несколько строк (Wrap). На десктопе чипы стоят в колонку
+  /// по одному: левая панель узкая, Wrap рвал названия пар на несколько строк.
   bool get _useRowForLessons {
     if (kIsWeb || isDesktopLayout()) return false;
     return defaultTargetPlatform == TargetPlatform.android;
@@ -417,18 +421,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _setDay(picked);
   }
 
-  void _mark(AttendanceStatus status) {
+  void _mark(AttendanceStatus status, {bool withTime = true}) {
     final targets = _targets;
     if (targets.isEmpty) return;
     // Дата отметки — выбранный день, время — момент отметки.
+    // У «пустого опоздал» времени нет: ставится повторным кликом.
     final now = DateTime.now();
-    final markedAt = DateTime(
-      _day.year,
-      _day.month,
-      _day.day,
-      now.hour,
-      now.minute,
-    );
+    final markedAt = withTime
+        ? DateTime(_day.year, _day.month, _day.day, now.hour, now.minute)
+        : DateTime(_day.year, _day.month, _day.day);
     final lesson = _selectedLesson;
     for (final student in targets) {
       _attendance.mark(
@@ -464,6 +465,22 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _mark(AttendanceStatus.absent);
   }
 
+  /// «Опоздал» ставится в два клика.
+  ///
+  /// Первый клик по студенту без опоздания — пустой «опоздал» без
+  /// времени. Повторный клик (когда у всех выбранных уже пустой
+  /// «опоздал») ставит время отметки. Если опоздание с временем уже
+  /// стоит — время обновляется на текущее, отметка не теряется.
+  void _markLate() {
+    final targets = _targets;
+    if (targets.isEmpty) return;
+    final allLate = targets.every((student) {
+      final entry = _entryFor(student);
+      return entry != null && entry.status == AttendanceStatus.late;
+    });
+    _mark(AttendanceStatus.late, withTime: allLate);
+  }
+
   /// Отмена отметки у всех выбранных студентов.
   void _clearMarks() {
     final targets = _targets;
@@ -493,9 +510,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   /// Отметка студента с учётом режима: на паре или на весь день.
+  ///
+  /// Во вкладке «Весь день», если все пары дня у студента заполнены одним
+  /// статусом («Пришёл», «По уважительной», «Не пришёл»), дневной
+  /// считается эта отметка — см. [AttendanceSession.wholeDayEntryFor].
   AttendanceEntry? _entryFor(Student student) {
     final lesson = _selectedLesson;
-    if (lesson == null) return _attendance.entryFor(student.id);
+    if (lesson == null) {
+      return _attendance.session.wholeDayEntryFor(student.id, _dayLessons);
+    }
     return _attendance.entryInLesson(
       student.id,
       lessonKey: lesson.id,
@@ -503,10 +526,11 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
   }
 
-  /// Сколько студентов отмечено в текущем режиме.
+  /// Сколько студентов отмечено в текущем режиме: на паре — отметки
+  /// этой пары, «весь день» — разные студенты с любой отметкой дня.
   int get _markedCount {
     final lesson = _selectedLesson;
-    if (lesson == null) return _attendance.entries.length;
+    if (lesson == null) return _attendance.session.markedCountForDay;
     return _attendance.session.markedCountInLesson(
       lessonKey: lesson.id,
       lessonTitle: lesson.subject,
@@ -533,9 +557,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
           if (widget.cloud != null) _buildCloudAction(context),
           if (widget.uiSettings != null)
             IconButton(
-              tooltip: 'Дизайн',
+              tooltip: 'Настройки',
               onPressed: () => _openSettings(context),
-              icon: const Icon(Icons.palette_outlined),
+              icon: const Icon(Icons.settings_outlined),
             ),
           const SizedBox(width: 4),
         ],
@@ -623,12 +647,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
               if (_dayLessons.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                // На Android пары идут одной строкой со скроллом; на
-                // остальных платформах — переноской в несколько строк.
-                if (_useRowForLessons)
+                // На десктопе — по одной кнопке на строку: в узкой левой
+                // панели названия пар не должны переноситься и слипаться.
+                // На Android — строка со скроллом, на web — Wrap.
+                if (isDesktopLayout())
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final chip in _lessonChips())
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: chip,
+                        ),
+                    ],
+                  )
+                else if (_useRowForLessons)
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
-                    child: Row(children: _lessonChips()),
+                    child: Row(spacing: 8, children: _lessonChips()),
                   )
                 else
                   Wrap(spacing: 8, runSpacing: 8, children: _lessonChips()),
@@ -739,6 +775,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     armed: status == AttendanceStatus.absent && _absentArmed,
                     onTap: status == AttendanceStatus.absent
                         ? _markAbsent
+                        : status == AttendanceStatus.late
+                        ? _markLate
                         : () => _mark(status),
                   ),
                 ],
@@ -1036,7 +1074,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                     child: _StatusButton(
                       status: AttendanceStatus.late,
                       enabled: canMark,
-                      onTap: () => _mark(AttendanceStatus.late),
+                      onTap: _markLate,
                     ),
                   ),
                   const SizedBox(width: _kGap),
@@ -1253,6 +1291,11 @@ class _StudentRow extends StatelessWidget {
     // «не пришёл» и «по уважительной» времени нет.
     if (entry!.status != AttendanceStatus.late) {
       return multiSelect ? entry!.status.label : null;
+    }
+    // Пустой «опоздал»: время ещё не поставлено, повторный клик
+    // по кнопке «Опоздал» его добавит.
+    if (!entry!.hasTime) {
+      return multiSelect ? '${entry!.status.label} · без времени' : 'без времени';
     }
     final time = _formatTime(TimeOfDay.fromDateTime(entry!.markedAt));
     if (multiSelect) return '${entry!.status.label} · $time';

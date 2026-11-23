@@ -44,8 +44,8 @@ extension StatusStyle on AttendanceStatus {
   /// Короткая подпись под названием статуса.
   String get hint => switch (this) {
     AttendanceStatus.came => 'Обычная отметка',
-    AttendanceStatus.absent => 'Повторное нажатие — выбрать время',
-    AttendanceStatus.late => 'Отметка без подтверждения',
+    AttendanceStatus.absent => 'Повторное нажатие подтвердит',
+    AttendanceStatus.late => 'Повторное нажатие — время',
     AttendanceStatus.excused => 'Уважительная причина',
   };
 }

@@ -3,7 +3,17 @@ name: Release build
 # Релиз создаётся автоматически: пушишь в main версию выше прежней
 # (поле version в pubspec.yaml, тег берётся из неё: 1.1.0+2 → v1.1.0) —
 # workflow ставит тег, создаёт Release и прикладывает сборки всех
-# платформ. Если версия не менялась — ничего не собирается.
+# платформ:
+#   yavka-android.apk            — Android (файл автообновления)
+#   yavka-linux-x64.tar.gz       — архив для Linux
+#   yavka-linux-x64.deb          — пакет deb
+#   yavka-linux-x64.rpm          — пакет rpm (универсальный)
+#   yavka-linux-x64.AppImage     — AppImage (файл автообновления)
+#   yavka-windows-x64.zip        — архив для Windows
+#   yavka-windows-x64-setup.exe  — инсталлятор (файл автообновления)
+#   yavka-ios-unsigned.ipa       — iOS без подписи (для установки нужна
+#                                  подпись: TestFlight или пересборка)
+# Если версия не менялась — ничего не собирается.
 on:
   push:
     branches: [main]
@@ -95,13 +105,27 @@ jobs:
         shell: pwsh
         run: Compress-Archive -Path 'build/windows/x64/runner/Release/*' -DestinationPath 'yavka-windows-x64.zip'
 
+      # Инсталлятор Windows: папка Release пакуется в один setup.exe
+      # через Inno Setup (скрипт windows/installer.iss).
+      - name: Установка Inno Setup
+        shell: pwsh
+        run: choco install innosetup -y --no-progress
+
+      - name: Сборка инсталлятора
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:\s*(.+)$').Matches[0].Groups[1].Value
+          $base = ($version -split '\+')[0]
+          Write-Host "Версия инсталлятора: $base"
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DAppVersion=$base" "/O$env:GITHUB_WORKSPACE" 'windows\installer.iss'
+
       - name: Загрузка в релиз
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           Write-Host "Uploading to release $env:RELEASE_TAG"
-          gh release upload "$env:RELEASE_TAG" 'yavka-windows-x64.zip' --clobber --repo '${{ github.repository }}'
+          gh release upload "$env:RELEASE_TAG" 'yavka-windows-x64.zip' 'yavka-windows-x64-setup.exe' --clobber --repo '${{ github.repository }}'
 
   android:
     name: Android (APK)
@@ -138,6 +162,42 @@ jobs:
           echo "Uploading to release $RELEASE_TAG"
           gh release upload "$RELEASE_TAG" yavka-android.apk --clobber --repo '${{ github.repository }}'
 
+  ios:
+    name: iOS (неподписанный IPA)
+    needs: release
+    if: needs.release.outputs.released == 'true'
+    runs-on: macos-latest
+    env:
+      RELEASE_TAG: ${{ needs.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установка Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.50.0
+
+      # Без кодовой подписи: для подписи нужны сертификат Apple
+      # Developer и профиль — их в репозитории нет.
+      - name: Сборка iOS
+        run: flutter build ios --release --no-codesign ${{ env.DART_DEFINES }}
+
+      # Runner.app в Payload/ = IPA, который принимают сидлоад-инструменты
+      # и службы пересборки (AltStore, Sideloadly, TestFlight после подписи).
+      - name: Упаковка IPA
+        run: |
+          mkdir Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry yavka-ios-unsigned.ipa Payload
+
+      - name: Загрузка в релиз
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "Uploading to release $RELEASE_TAG"
+          gh release upload "$RELEASE_TAG" yavka-ios-unsigned.ipa --clobber --repo '${{ github.repository }}'
+
   linux:
     name: Linux x64
     needs: release
@@ -157,22 +217,138 @@ jobs:
       - name: Зависимости для сборки Linux
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev rpm
 
       - name: Сборка Linux
         run: flutter build linux --release ${{ env.DART_DEFINES }}
 
-      - name: Упаковка
+      - name: Определение версии
+        run: |
+          version=$(grep -m1 '^version:' pubspec.yaml | sed 's/^version:[[:space:]]*//')
+          echo "BASE_VERSION=${version%%+*}" >> "$GITHUB_ENV"
+
+      - name: Архив tar.gz
         run: |
           cd build/linux/x64/release/bundle
-          zip -qr "$GITHUB_WORKSPACE/yavka-linux-x64.zip" .
+          tar -czf "$GITHUB_WORKSPACE/yavka-linux-x64.tar.gz" .
+
+      # Общий .desktop для deb, rpm и AppImage: Exec=yavka — бинарь
+      # ставится в /usr/bin (симлинк на /opt/yavka) или лежит рядом
+      # в AppImage.
+      - name: Файл .desktop
+        run: |
+          cat > "$GITHUB_WORKSPACE/yavka.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Явка
+          Comment=Учёт посещаемости
+          Exec=yavka
+          Icon=yavka
+          Terminal=false
+          Categories=Utility;
+          EOF
+
+      - name: Пакет deb
+        run: |
+          pkg="$GITHUB_WORKSPACE/deb/yavka"
+          mkdir -p "$pkg/DEBIAN" "$pkg/opt/yavka" "$pkg/usr/bin" \
+            "$pkg/usr/share/applications" \
+            "$pkg/usr/share/icons/hicolor/512x512/apps"
+          cp -r build/linux/x64/release/bundle/. "$pkg/opt/yavka/"
+          ln -s /opt/yavka/yavka "$pkg/usr/bin/yavka"
+          cp "$GITHUB_WORKSPACE/yavka.desktop" "$pkg/usr/share/applications/"
+          cp web/icons/Icon-512.png "$pkg/usr/share/icons/hicolor/512x512/apps/yavka.png"
+          mkdir -p "$pkg/usr/share/doc/yavka"
+          cp LICENSE "$pkg/usr/share/doc/yavka/copyright"
+          cat > "$pkg/DEBIAN/control" <<EOF
+          Package: yavka
+          Version: $BASE_VERSION
+          Section: utils
+          Priority: optional
+          Architecture: amd64
+          Depends: libgtk-3-0, libglib2.0-0, libdbus-1-3
+          Maintainer: Fr4ncuzS4n <Fr4ncuzS4n@users.noreply.github.com>
+          Description: Явка — учёт посещаемости группы
+          EOF
+          dpkg-deb --build --root-owner-group "$pkg" "$GITHUB_WORKSPACE/yavka-linux-x64.deb"
+
+      - name: Пакет rpm
+        run: |
+          cat > "$GITHUB_WORKSPACE/yavka.spec" <<EOF
+          Name:           yavka
+          Version:        $BASE_VERSION
+          Release:        1
+          Summary:        Явка — учёт посещаемости
+          License:        GPL-3.0-only
+          BuildArch:      x86_64
+          Requires:       gtk3 glib2 dbus-libs
+
+          %description
+          Приложение «Явка» для учёта посещаемости.
+
+          %install
+          mkdir -p %{buildroot}/opt/yavka %{buildroot}%{_bindir} \\
+            %{buildroot}%{_datadir}/applications \\
+            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps \\
+            %{buildroot}%{_docdir}/yavka
+          cp -r "$GITHUB_WORKSPACE/build/linux/x64/release/bundle/." %{buildroot}/opt/yavka/
+          ln -s /opt/yavka/yavka %{buildroot}%{_bindir}/yavka
+          cp "$GITHUB_WORKSPACE/yavka.desktop" %{buildroot}%{_datadir}/applications/
+          cp "$GITHUB_WORKSPACE/web/icons/Icon-512.png" \\
+            %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          cp "$GITHUB_WORKSPACE/LICENSE" %{buildroot}%{_docdir}/yavka/LICENSE
+
+          %files
+          /opt/yavka
+          %{_bindir}/yavka
+          %{_datadir}/applications/yavka.desktop
+          %{_datadir}/icons/hicolor/512x512/apps/yavka.png
+          %{_docdir}/yavka/LICENSE
+          EOF
+          mkdir -p .rpmbuild/BUILD .rpmbuild/RPMS .rpmbuild/SPECS
+          rpmbuild -bb --define "_topdir $PWD/.rpmbuild" "$GITHUB_WORKSPACE/yavka.spec"
+          cp .rpmbuild/RPMS/x86_64/yavka-*.rpm "$GITHUB_WORKSPACE/yavka-linux-x64.rpm"
+
+      # AppImage: AppRun подкладывает lib/ бандла в LD_LIBRARY_PATH,
+      # остальное — стандартный AppDir. Инструмент запускается через
+      # --appimage-extract-and-run: на runner нет FUSE.
+      - name: AppImage
+        run: |
+          curl -fsSL -o "$GITHUB_WORKSPACE/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$GITHUB_WORKSPACE/appimagetool"
+          appdir="$GITHUB_WORKSPACE/AppDir"
+          mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" \
+            "$appdir/usr/share/icons/hicolor/512x512/apps"
+          cp -r build/linux/x64/release/bundle/. "$appdir/usr/bin/"
+          cp "$GITHUB_WORKSPACE/yavka.desktop" "$appdir/yavka.desktop"
+          cp "$GITHUB_WORKSPACE/yavka.desktop" "$appdir/usr/share/applications/"
+          cp web/icons/Icon-512.png "$appdir/yavka.png"
+          mkdir -p "$appdir/usr/share/doc/yavka"
+          cp LICENSE "$appdir/usr/share/doc/yavka/LICENSE"
+          cp web/icons/Icon-512.png "$appdir/usr/share/icons/hicolor/512x512/apps/yavka.png"
+          ln -s yavka.png "$appdir/.DirIcon"
+          cat > "$appdir/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          export LD_LIBRARY_PATH="$HERE/usr/bin/lib:${LD_LIBRARY_PATH}"
+          exec "$HERE/usr/bin/yavka" "$@"
+          EOF
+          chmod +x "$appdir/AppRun"
+          ARCH=x86_64 "$GITHUB_WORKSPACE/appimagetool" --appimage-extract-and-run \
+            "$appdir" "$GITHUB_WORKSPACE/yavka-linux-x64.AppImage"
 
       - name: Загрузка в релиз
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           echo "Uploading to release $RELEASE_TAG"
-          gh release upload "$RELEASE_TAG" yavka-linux-x64.zip --clobber --repo '${{ github.repository }}'
+          gh release upload "$RELEASE_TAG" \
+            yavka-linux-x64.tar.gz \
+            yavka-linux-x64.deb \
+            yavka-linux-x64.rpm \
+            yavka-linux-x64.AppImage \
+            --clobber --repo '${{ github.repository }}'
 
   web:
     name: Web
