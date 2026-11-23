@@ -97,7 +97,7 @@ flutter test
 
    | Платформа | Тип клиента | Что нужно |
    |---|---|---|
-   | Android, iOS, Linux, Windows | **Desktop app** | Client ID и Client Secret |
+   | Android, Linux, Windows | **Desktop app** | Client ID и Client Secret |
    | Web | **Web application** | Client ID и Authorized JavaScript origins |
 
    Для web добавьте адрес, на котором запущено приложение, например
