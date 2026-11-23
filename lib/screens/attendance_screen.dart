@@ -329,6 +329,24 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return defaultTargetPlatform == TargetPlatform.android;
   }
 
+  /// На Android студента можно отметить смахиванием строки списка:
+  /// влево — «Пришёл», вправо — «Опоздал». Web и десктоп свайпов не
+  /// используют: там быстрее кнопками и мышью.
+  bool get _useSwipeMarking {
+    if (kIsWeb || isDesktopLayout()) return false;
+    return defaultTargetPlatform == TargetPlatform.android;
+  }
+
+  /// Отметка смахиванием относится к тому студенту, чью строку смахнули,
+  /// а не к текущему выбору: так можно отмечать подряд, не нажимая на
+  /// каждую строку. Поочерёдная отметка при этом продолжает работать —
+  /// [_mark] подсвечивает следующего неотмеченного.
+  void _swipeMark(Student student, AttendanceStatus status) {
+    if (_isWeekend || _multiSelect) return;
+    if (_selectedStudentId != student.id) _select(student);
+    _mark(status);
+  }
+
   /// Самая ранняя дата, за которую можно отметить (год назад).
   DateTime get _minDay =>
       dateOnly(DateTime.now()).subtract(const Duration(days: 365));
@@ -872,20 +890,32 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               ),
             for (var i = 0; i < students.length; i++) ...[
               if (i > 0) const SizedBox(height: 8),
-              _StudentRow(
-                key: ValueKey('student-${students[i].id}'),
-                student: students[i],
-                entry: _entryFor(students[i]),
-                selected: _multiSelect
-                    ? _selectedIds.contains(students[i].id)
-                    : _selectedStudentId == students[i].id,
-                multiSelect: _multiSelect,
-                onTap: () => _select(students[i]),
-              ),
+              _studentRowItem(students[i]),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  /// Строка студента со свайпом на Android. В остальных режимах —
+  /// обычная строка: тап выбирает студента, свайпов нет.
+  Widget _studentRowItem(Student student) {
+    final row = _StudentRow(
+      key: ValueKey('student-${student.id}'),
+      student: student,
+      entry: _entryFor(student),
+      selected: _multiSelect
+          ? _selectedIds.contains(student.id)
+          : _selectedStudentId == student.id,
+      multiSelect: _multiSelect,
+      onTap: () => _select(student),
+    );
+    if (!_useSwipeMarking || _isWeekend || _multiSelect) return row;
+    return _SwipeableStudentRow(
+      onSwipeLeft: () => _swipeMark(student, AttendanceStatus.came),
+      onSwipeRight: () => _swipeMark(student, AttendanceStatus.late),
+      child: row,
     );
   }
 
@@ -968,6 +998,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
               if (_absentArmed) ...[
                 const SizedBox(height: 8),
                 const _ArmedHint(),
+              ],
+              if (_useSwipeMarking && !_isWeekend && !_multiSelect) ...[
+                const SizedBox(height: 2),
+                Text(
+                  'Свайп по строке: влево — пришёл, вправо — опоздал',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                  ),
+                ),
               ],
               const SizedBox(height: 10),
               Row(
@@ -1093,6 +1132,100 @@ class _GroupHeader extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Строка студента со смахиванием: влево — «Пришёл», вправо — «Опоздал».
+///
+/// Пока палец ведёт строку, за ней видна подсказка нужной отметки.
+/// Свайп срабатывает, только если сдвиг больше [_swipeThreshold] —
+/// обычный тап по строке по-прежнему просто выбирает студента.
+class _SwipeableStudentRow extends StatefulWidget {
+  const _SwipeableStudentRow({
+    required this.child,
+    required this.onSwipeLeft,
+    required this.onSwipeRight,
+  });
+
+  final Widget child;
+  final VoidCallback onSwipeLeft;
+  final VoidCallback onSwipeRight;
+
+  @override
+  State<_SwipeableStudentRow> createState() => _SwipeableStudentRowState();
+}
+
+class _SwipeableStudentRowState extends State<_SwipeableStudentRow> {
+  static const _swipeThreshold = 56.0;
+  static const _maxSlide = 80.0;
+
+  double _drag = 0;
+
+  void _onUpdate(DragUpdateDetails details) {
+    setState(() => _drag += details.delta.dx);
+  }
+
+  void _onEnd(DragEndDetails details) {
+    final drag = _drag;
+    if (mounted) setState(() => _drag = 0);
+    if (drag.abs() < _swipeThreshold) return;
+    if (drag < 0) {
+      widget.onSwipeLeft();
+    } else {
+      widget.onSwipeRight();
+    }
+  }
+
+  void _onCancel() {
+    if (mounted) setState(() => _drag = 0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final drag = _drag;
+    final status = drag < 0 ? AttendanceStatus.came : AttendanceStatus.late;
+    final color = status.foreground(scheme.brightness);
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onHorizontalDragUpdate: _onUpdate,
+      onHorizontalDragEnd: _onEnd,
+      onHorizontalDragCancel: _onCancel,
+      child: Stack(
+        children: [
+          if (drag.abs() > 1)
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(_kRowRadius),
+                ),
+                alignment: drag < 0
+                    ? Alignment.centerRight
+                    : Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(status.icon, size: 18, color: color),
+                    const SizedBox(width: 6),
+                    Text(
+                      status.label,
+                      style: theme.textTheme.labelLarge?.copyWith(color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(drag.clamp(-_maxSlide, _maxSlide), 0),
+            child: widget.child,
+          ),
+        ],
+      ),
     );
   }
 }
